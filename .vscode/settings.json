@@ -1,6 +1,0 @@
-{
-    "files.associations": {
-        "qtwidgets": "cpp",
-        "qtwidgetsglobal.h": "c"
-    }
-}
