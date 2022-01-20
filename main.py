@@ -1,10 +1,8 @@
 import sys
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
-    QPushButton,
     QWidget,
 )
 
@@ -12,6 +10,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # UI initialization
         self.setWindowTitle("My plotter")
         self.resize(800, 600)
         self.center()
@@ -22,6 +21,11 @@ class MainWindow(QMainWindow):
         cp = self.screen().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
+
+    def keyPressEvent(self, e):
+        if (e.key() == Qt.Key.Key_Escape.value or
+            e.key() == Qt.Key.Key_Q.value):
+            self.close()
 
 
 if __name__ == "__main__":
