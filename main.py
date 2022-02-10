@@ -51,8 +51,6 @@ class MainWindow(QMainWindow):
         myxticks = zip(range(len(wavelengths)), wavelengths)
         print(range(len(wavelengths)))
         print([str(w) for w in wavelengths])
-        
-        # self.pw.getAxis('bottom').setTicks([])
 
         ticks = [list(zip(range(len(wavelengths)), wavelengths))]
         pw = pg.PlotWidget()
@@ -66,9 +64,26 @@ class MainWindow(QMainWindow):
         self.move(qr.topLeft())
 
     def keyPressEvent(self, e):
-        if (e.key() == Qt.Key.Key_Escape.value or
-            e.key() == Qt.Key.Key_Q.value):
+        if (e.key() == Qt.Key.Key_Escape or
+            e.key() == Qt.Key.Key_Q):
             self.close()
+
+        elif (e.key() == Qt.Key.Key_Up or
+              e.key() == Qt.Key.Key_W):
+            self.pw.getPlotItem().getViewBox().scaleBy((0.9, 0.9))
+
+        elif (e.key() == Qt.Key.Key_Down or
+              e.key() == Qt.Key.Key_S):
+            self.pw.getPlotItem().getViewBox().scaleBy((1.1, 1.1))
+
+        elif (e.key() == Qt.Key.Key_Left or
+              e.key() == Qt.Key.Key_A):
+            self.pw.getPlotItem().getViewBox().translateBy((-10, 0))
+
+        elif (e.key() == Qt.Key.Key_Right or
+              e.key() == Qt.Key.Key_D):
+            self.pw.getPlotItem().getViewBox().translateBy((+10, 0))
+
         elif (e.key() == Qt.Key.Key_Home):
             self.pw.getPlotItem().getViewBox().autoRange()
             print("autorange")
@@ -76,7 +91,6 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
     window = MainWindow()
     window.show()
     app.exec()
