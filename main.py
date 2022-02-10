@@ -20,13 +20,19 @@ class MainWindow(QMainWindow):
         self.widget = QWidget()     # Container widget
         
         self.pw = pg.PlotWidget(background=None)
-        self.pi = self.pw.getPlotItem()
-        self.pi.hideButtons()
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.pw)
         self.layout.setContentsMargins(30, 30, 30, 30)
         self.widget.setLayout(self.layout)
-        
+        self.pw.getPlotItem().hideButtons()
+        self.pw.getPlotItem().setLimits(
+            xMin=600, 
+            xMax=900, 
+            yMin=0,
+            yMax=300,
+            maxXRange=300,
+            maxYRange=300
+            )
         
         self.setWindowTitle("My plotter")
         self.resize(1000, 600)
@@ -63,6 +69,9 @@ class MainWindow(QMainWindow):
         if (e.key() == Qt.Key.Key_Escape.value or
             e.key() == Qt.Key.Key_Q.value):
             self.close()
+        elif (e.key() == Qt.Key.Key_Home):
+            self.pw.getPlotItem().getViewBox().autoRange()
+            print("autorange")
 
 
 if __name__ == "__main__":
