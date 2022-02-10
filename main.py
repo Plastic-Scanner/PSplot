@@ -19,18 +19,14 @@ class MainWindow(QMainWindow):
         # Widgets
         self.widget = QWidget()     # Container widget
         
-        self.labelWidget = QLabel("Hello World!")
-
-        self.plotWidget = pg.PlotWidget()
-        self.plotWidget.setXRange(0, 20, padding=0)
-        self.plotWidget.setYRange(0, 10, padding=0)
-        
-
+        self.pw = pg.PlotWidget(background=None)
+        self.pi = self.pw.getPlotItem()
+        self.pi.hideButtons()
         self.layout = QHBoxLayout()
-        self.layout.addWidget(self.labelWidget)
-        self.layout.addWidget(self.plotWidget)
-        self.layout.setContentsMargins(10,10,30,30)
+        self.layout.addWidget(self.pw)
+        self.layout.setContentsMargins(30, 30, 30, 30)
         self.widget.setLayout(self.layout)
+        
         
         self.setWindowTitle("My plotter")
         self.resize(1000, 600)
@@ -38,11 +34,25 @@ class MainWindow(QMainWindow):
         self.center()
         self.setCentralWidget(self.widget)
 
-        # x = np.random.normal(size=100)
-        # y = np.random.normal(size=100)
-        # self.plotWidget.plot(x, y, pen=None, symbol='o')
 
+        # EXPERIMENT
+        wavelengths = [610, 680, 730, 760, 810, 860]    # in nanometers, 20nm FWHM
+        data = [239.23, 233.81, 187.27, 176.41, 172.35, 173.78]
 
+        self.pw.plot(wavelengths, data, symbol="o")
+        self.pw.setXRange(wavelengths[0], wavelengths[-1])
+
+        myxticks = zip(range(len(wavelengths)), wavelengths)
+        print(range(len(wavelengths)))
+        print([str(w) for w in wavelengths])
+        
+        # self.pw.getAxis('bottom').setTicks([])
+
+        ticks = [list(zip(range(len(wavelengths)), wavelengths))]
+        pw = pg.PlotWidget()
+        xax = pw.getAxis('bottom')
+        xax.setTicks(ticks)
+        
     def center(self):
         qr = self.frameGeometry()
         cp = self.screen().availableGeometry().center()
