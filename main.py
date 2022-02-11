@@ -37,10 +37,16 @@ class MainWindow(QMainWindow):
             yMin=min(data) - min(data)*0.1,
             yMax=max(data) + max(data)*0.1,
             )
-        
+        self.pi.setLabel('bottom', "Wavelength", units='nm')
+        self.pi.setLabel('left', "NIR output", units='idk')
+        self.pi.setTitle('Reflectance')
+
+        xdict = dict(enumerate([str(x) for x in wavelengths]))
+        ax = self.pi.getAxis('bottom').setTicks([xdict.items()])
+
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.pw)
-        self.layout.setContentsMargins(30, 30, 30, 30)
+        self.layout.setContentsMargins(30, 60, 60, 30)
         self.widget.setLayout(self.layout)
         
         self.setWindowTitle("My plotter")
