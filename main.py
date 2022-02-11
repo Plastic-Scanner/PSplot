@@ -17,7 +17,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         # EXPERIMENT
-        wavelengths = [610, 680, 730, 760, 810, 860]    # in nanometers, 20nm FWHM
+        self.wavelengths = [610, 680, 730, 760, 810, 860]    # in nanometers, 20nm FWHM
         data = [239.23, 233.81, 187.27, 176.41, 172.35, 173.78]
 
         # Widgets
@@ -26,23 +26,20 @@ class MainWindow(QMainWindow):
         self.pw = pg.PlotWidget(background=None)
         self.pi = self.pw.getPlotItem()
 
-        self.pw.plot(wavelengths, data, symbol="o")
-        self.pw.setXRange(wavelengths[0], wavelengths[-1], padding=0.1)
+        self.pc = self.pw.plot(self.wavelengths, data, symbol="o")
+        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
 
         self.pi.hideButtons()
         self.pi.setMenuEnabled(False)
         self.pi.setLimits(
-            xMin=min(wavelengths) - min(wavelengths)*0.1 , 
-            xMax=max(wavelengths) + max(wavelengths)*0.1, 
+            xMin=min(self.wavelengths) - min(self.wavelengths)*0.1 , 
+            xMax=max(self.wavelengths) + max(self.wavelengths)*0.1, 
             yMin=min(data) - min(data)*0.1,
             yMax=max(data) + max(data)*0.1,
             )
         self.pi.setLabel('bottom', "Wavelength", units='nm')
         self.pi.setLabel('left', "NIR output", units='idk')
         self.pi.setTitle('Reflectance')
-
-        xdict = dict(enumerate([str(x) for x in wavelengths]))
-        ax = self.pi.getAxis('bottom').setTicks([xdict.items()])
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.pw)
@@ -86,6 +83,13 @@ class MainWindow(QMainWindow):
 
         elif (e.key() == Qt.Key.Key_Home):
             self.pi.getViewBox().autoRange(padding=0.1)
+        
+        elif (e.key() == Qt.Key.Key_P):
+            self.plot([229.23, 213.81, 287.27, 133.41, 152.35, 183.78])
+
+
+    def plot(self, data):
+        self.pc.setData(self.wavelengths, data)
 
 
 if __name__ == "__main__":
