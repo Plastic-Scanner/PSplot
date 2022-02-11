@@ -16,46 +16,38 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # EXPERIMENT
+        wavelengths = [610, 680, 730, 760, 810, 860]    # in nanometers, 20nm FWHM
+        data = [239.23, 233.81, 187.27, 176.41, 172.35, 173.78]
+
         # Widgets
         self.widget = QWidget()     # Container widget
         
         self.pw = pg.PlotWidget(background=None)
+        self.pi = self.pw.getPlotItem()
+
+        self.pw.plot(wavelengths, data, symbol="o")
+        self.pw.setXRange(wavelengths[0], wavelengths[-1], padding=0.1)
+
+        self.pi.hideButtons()
+        self.pi.setMenuEnabled(False)
+        self.pi.setLimits(
+            xMin=min(wavelengths) - min(wavelengths)*0.1 , 
+            xMax=max(wavelengths) + max(wavelengths)*0.1, 
+            yMin=min(data) - min(data)*0.1,
+            yMax=max(data) + max(data)*0.1,
+            )
+        
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.pw)
         self.layout.setContentsMargins(30, 30, 30, 30)
         self.widget.setLayout(self.layout)
-        self.pw.getPlotItem().hideButtons()
-        self.pw.getPlotItem().setLimits(
-            xMin=600, 
-            xMax=900, 
-            yMin=0,
-            yMax=300,
-            maxXRange=300,
-            maxYRange=300
-            )
         
         self.setWindowTitle("My plotter")
         self.resize(1000, 600)
         self.setMinimumSize(600, 350)
         self.center()
         self.setCentralWidget(self.widget)
-
-
-        # EXPERIMENT
-        wavelengths = [610, 680, 730, 760, 810, 860]    # in nanometers, 20nm FWHM
-        data = [239.23, 233.81, 187.27, 176.41, 172.35, 173.78]
-
-        self.pw.plot(wavelengths, data, symbol="o")
-        self.pw.setXRange(wavelengths[0], wavelengths[-1])
-
-        myxticks = zip(range(len(wavelengths)), wavelengths)
-        print(range(len(wavelengths)))
-        print([str(w) for w in wavelengths])
-
-        ticks = [list(zip(range(len(wavelengths)), wavelengths))]
-        pw = pg.PlotWidget()
-        xax = pw.getAxis('bottom')
-        xax.setTicks(ticks)
         
     def center(self):
         qr = self.frameGeometry()
@@ -69,24 +61,25 @@ class MainWindow(QMainWindow):
             self.close()
 
         elif (e.key() == Qt.Key.Key_Up or
-              e.key() == Qt.Key.Key_W):
-            self.pw.getPlotItem().getViewBox().scaleBy((0.9, 0.9))
+              e.key() == Qt.Key.Key_W or
+              e.key() == Qt.Key.Key_Plus):
+            self.pi.getViewBox().scaleBy((0.9, 0.9))
 
         elif (e.key() == Qt.Key.Key_Down or
-              e.key() == Qt.Key.Key_S):
-            self.pw.getPlotItem().getViewBox().scaleBy((1.1, 1.1))
+              e.key() == Qt.Key.Key_S or
+              e.key() == Qt.Key.Key_Minus):
+            self.pi.getViewBox().scaleBy((1.1, 1.1))
 
         elif (e.key() == Qt.Key.Key_Left or
               e.key() == Qt.Key.Key_A):
-            self.pw.getPlotItem().getViewBox().translateBy((-10, 0))
+            self.pi.getViewBox().translateBy((-10, 0))
 
         elif (e.key() == Qt.Key.Key_Right or
               e.key() == Qt.Key.Key_D):
-            self.pw.getPlotItem().getViewBox().translateBy((+10, 0))
+            self.pi.getViewBox().translateBy((+10, 0))
 
         elif (e.key() == Qt.Key.Key_Home):
-            self.pw.getPlotItem().getViewBox().autoRange()
-            print("autorange")
+            self.pi.getViewBox().autoRange(padding=0.1)
 
 
 if __name__ == "__main__":
