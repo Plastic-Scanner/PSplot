@@ -11,14 +11,17 @@ from PyQt6.QtWidgets import (
 )
 import pyqtgraph as pg
 import numpy as np
+import serial
 
-class MainWindow(QMainWindow):
-    def __init__(self):
+class Spectraplot(QMainWindow):
+    def __init__(self, serialobj):
         super().__init__()
 
         # EXPERIMENT
-        self.wavelengths = [610, 680, 730, 760, 810, 860]    # in nanometers, 20nm FWHM
-        data = [239.23, 233.81, 187.27, 176.41, 172.35, 173.78]
+        self.wavelengths = [855, 940, 1050, 1200, 1300, 1450, 1550, 1650]    # in nanometers, 20nm FWHM
+        # data = [239.23, 233.81, 187.27, 176.41, 172.35, 173.78, 173.78, 173.78]
+        self.serial = serialobj
+        self.serial.readline()  # Consume the "Plastic scanner initialized line"
 
         # Widgets
         self.widget = QWidget()     # Container widget
@@ -26,17 +29,17 @@ class MainWindow(QMainWindow):
         self.pw = pg.PlotWidget(background=None)
         self.pi = self.pw.getPlotItem()
 
-        self.pc = self.pw.plot(self.wavelengths, data, symbol="o")
+        self.pc = self.pw.plot(self.wavelengths, np.zeros(8), symbol="o")
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
 
         self.pi.hideButtons()
         self.pi.setMenuEnabled(False)
-        self.pi.setLimits(
-            xMin=min(self.wavelengths) - min(self.wavelengths)*0.1 , 
-            xMax=max(self.wavelengths) + max(self.wavelengths)*0.1, 
-            yMin=min(data) - min(data)*0.1,
-            yMax=max(data) + max(data)*0.1,
-            )
+        # self.pi.setLimits(
+        #     xMin=min(self.wavelengths) - min(self.wavelengths)*0.1 , 
+        #     xMax=max(self.wavelengths) + max(self.wavelengths)*0.1, 
+        #     yMin=min(data) - min(data)*0.1,
+        #     yMax=max(data) + max(data)*0.1,
+        #     )
         self.pi.setLabel('bottom', "Wavelength", units='nm')
         self.pi.setLabel('left', "NIR output", units='idk')
         self.pi.setTitle('Reflectance')
@@ -84,9 +87,23 @@ class MainWindow(QMainWindow):
         elif (e.key() == Qt.Key.Key_Home):
             self.pi.getViewBox().autoRange(padding=0.1)
         
-        elif (e.key() == Qt.Key.Key_P):
-            self.plot([229.23, 213.81, 287.27, 133.41, 152.35, 183.78])
+        elif (e.key() == Qt.Key.Key_Space):
+            data = self.getMeasurement()
+            print(data)
+            self.plot(data)
 
+    def getMeasurement(self):
+        # send serial command
+        self.serial.write(b"scan\n")
+
+        # read response
+        line = self.serial.readline()
+        line = line.decode()
+
+        # parse data
+        data = line.strip('> ').strip('\r\n').split('\t')
+        data = [float(x) for x in data if x != '']
+        return data
 
     def plot(self, data):
         self.pc.setData(self.wavelengths, data)
@@ -94,6 +111,6 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = Spectraplot()
     window.show()
     app.exec()
