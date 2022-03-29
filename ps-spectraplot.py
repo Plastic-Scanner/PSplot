@@ -14,6 +14,14 @@ import pyqtgraph as pg
 import numpy as np
 import serial
 
+#variables
+baudrate = 9600
+inputFile = "COM5"
+
+
+
+
+
 class Spectraplot(QMainWindow):
     def __init__(self, serialobj):
         super().__init__()
@@ -90,12 +98,12 @@ class Spectraplot(QMainWindow):
         
         elif (e.key() == Qt.Key.Key_Space):
             data = self.getMeasurement()
-            print(data)
             self.plot(data)
+            data = self.getBackground()
 
     def getMeasurement(self):
         # send serial command
-        self.serial.write(b"scan\n")
+        self.serial.write(b"SCAN\n")
 
         # read response
         line = self.serial.readline()
@@ -106,14 +114,25 @@ class Spectraplot(QMainWindow):
         data = [float(x) for x in data if x != '']
         return data
 
+    def getBackground(self):
+        # send serial command
+        self.serial.write(b"ADC\n")
+
+        # read response
+        line = self.serial.readline()
+        line = line.decode()
+
+        # parse data
+        data = float(line.strip('> ').strip('\r\n'))
+        return data
+
     def plot(self, data):
         self.pc.setData(self.wavelengths, data)
 
 
 if __name__ == "__main__":
 
-    baudrate = 9600
-    inputFile = "/dev/ttyACM0"
+
     
     try:
         ser = serial.Serial(inputFile, baudrate=baudrate, timeout=0.5)
