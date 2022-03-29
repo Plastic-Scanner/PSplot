@@ -17,7 +17,7 @@ import serial
 #variables
 baudrate = 9600
 inputFile = "COM5"
-
+max = [0.492535, 0.508075, 0.477795, 0.481705, 0.509225, 0.491605, 0.485565, 0.520375]
 
 
 
@@ -97,7 +97,28 @@ class Spectraplot(QMainWindow):
             self.pi.getViewBox().autoRange(padding=0.1)
         
         elif (e.key() == Qt.Key.Key_Space):
-            data = self.getMeasurement()
+            pre = self.getBackground()                                          #do a prescan
+            data = self.getMeasurement()                                        #do a normal scan
+            post = self.getBackground()                                         #do a postscan
+
+            cleaned = [x-((pre+post)/2) for x in data]                          #subtract the average of pre and post scan from normal scan
+            percentage = [0,0,0,0,0,0,0,0]
+            for x in range(len(data)):
+                percentage[x] = (data[x]/max[x])                                #scale the readings based on the max reading defined in top (scan with speclon)
+            
+            #calculate ratio's
+            ratio = [0,0,0]
+            ratio[0] = percentage[6]/percentage[7]
+            ratio[1] = percentage[5]/percentage[6]
+            ratio[2] = percentage[3]/percentage[4]
+            if abs(pre-post) >= 0.00005:
+                print("item moved?")                                            #feedback if it moved
+            elif percentage[7] <= 0.2:
+                print("not enough reflection")                                  #feedback if not enough light reflected
+            else: 
+                #print(percentage)
+                #print(cleaned)
+                print("%.6f, %.6f, %.6f" %(ratio[0], ratio[1], ratio[2]))       #print most interesting ratio's
             self.plot(data)
             data = self.getBackground()
 
