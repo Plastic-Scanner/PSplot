@@ -120,7 +120,6 @@ class Spectraplot(QMainWindow):
                 #print(cleaned)
                 print("%.6f, %.6f, %.6f" %(ratio[0], ratio[1], ratio[2]))       #print most interesting ratio's
             self.plot(data)
-            data = self.getBackground()
 
     def getMeasurement(self):
         # send serial command
