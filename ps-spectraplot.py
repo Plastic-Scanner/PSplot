@@ -123,7 +123,7 @@ class Spectraplot(QMainWindow):
 
     def getMeasurement(self):
         # send serial command
-        self.serial.write(b"SCAN\n")
+        self.serial.write(b"scan\n")
 
         # read response
         line = self.serial.readline()
@@ -136,7 +136,7 @@ class Spectraplot(QMainWindow):
 
     def getBackground(self):
         # send serial command
-        self.serial.write(b"ADC\n")
+        self.serial.write(b"adc\n")
 
         # read response
         line = self.serial.readline()
