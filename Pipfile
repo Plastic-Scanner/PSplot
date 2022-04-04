@@ -8,6 +8,8 @@ ipython = "*"
 numpy = "*"
 python-language-server = "*"
 pyserial = "*"
+PyQt6 = "*"
+pyqtgraph = "*"
 
 [dev-packages]
 
