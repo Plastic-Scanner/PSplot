@@ -27,7 +27,7 @@ class Spectraplot(QMainWindow):
         super().__init__()
 
         # EXPERIMENT
-        self.wavelengths = [855, 940, 1050, 1200, 1300, 1450, 1550, 1650]    # in nanometers, 20nm FWHM
+        self.wavelengths = [855, 940, 1050, 1300, 1450, 1550, 1650, 1720]    # in nanometers, 20nm FWHM
 
         self.serial = serialobj
         self.serial.readline()  # Consume the "Plastic scanner initialized line"
@@ -113,11 +113,11 @@ class Spectraplot(QMainWindow):
             ratio[2] = percentage[3]/percentage[4]
             if abs(pre-post) >= 0.00005:
                 print("item moved?")                                            #feedback if it moved
-            elif percentage[7] <= 0.2:
+            elif percentage[6] <= 0.2:
                 print("not enough reflection")                                  #feedback if not enough light reflected
             else: 
-                #print(percentage)
-                #print(cleaned)
+                print(percentage)
+                print(cleaned)
                 print("%.6f, %.6f, %.6f" %(ratio[0], ratio[1], ratio[2]))       #print most interesting ratio's
             self.plot(data)
 
