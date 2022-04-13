@@ -17,7 +17,7 @@ import serial
 #variables
 baudrate = 9600
 inputFile = "COM5"
-max = [0.492535, 0.508075, 0.477795, 0.481705, 0.509225, 0.491605, 0.485565, 0.520375]
+max = [0.44924,	0.31969,0.28668,0.37101,0.36384,0.33052,0.50033,0.08776]
 
 
 
@@ -104,7 +104,7 @@ class Spectraplot(QMainWindow):
             cleaned = [x-((pre+post)/2) for x in data]                          #subtract the average of pre and post scan from normal scan
             percentage = [0,0,0,0,0,0,0,0]
             for x in range(len(data)):
-                percentage[x] = (data[x]/max[x])                                #scale the readings based on the max reading defined in top (scan with speclon)
+                percentage[x] = (cleaned[x]/max[x])                                #scale the readings based on the max reading defined in top (scan with speclon)
             
             #calculate ratio's
             ratio = [0,0,0]
