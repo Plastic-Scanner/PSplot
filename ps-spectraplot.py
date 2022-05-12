@@ -15,14 +15,14 @@ import numpy as np
 import serial
 
 class Spectraplot(QMainWindow):
-    def __init__(self, serialobj):
+    def __init__(self):
         super().__init__()
 
         # EXPERIMENT
         self.wavelengths = [855, 940, 1050, 1200, 1300, 1450, 1550, 1650]    # in nanometers, 20nm FWHM
 
-        self.serial = serialobj
-        self.serial.readline()  # Consume the "Plastic scanner initialized line"
+        # self.serial = serialobj
+        # self.serial.readline()  # Consume the "Plastic scanner initialized line"
 
         # Widgets
         self.widget = QWidget()     # Container widget
@@ -35,12 +35,11 @@ class Spectraplot(QMainWindow):
 
         self.pi.hideButtons()
         self.pi.setMenuEnabled(False)
-        # self.pi.setLimits(
-        #     xMin=min(self.wavelengths) - min(self.wavelengths)*0.1 , 
-        #     xMax=max(self.wavelengths) + max(self.wavelengths)*0.1, 
-        #     yMin=min(data) - min(data)*0.1,
-        #     yMax=max(data) + max(data)*0.1,
-        #     )
+        xPadding = min(self.wavelengths) * 0.1
+        self.pi.setLimits(
+            xMin=min(self.wavelengths) - xPadding, 
+            xMax=max(self.wavelengths) + xPadding,
+            )
         self.pi.setLabel('bottom', "Wavelength [nm]")
         self.pi.setLabel('left', "NIR output", units='V')
         self.pi.setTitle('Reflectance')
@@ -112,18 +111,18 @@ class Spectraplot(QMainWindow):
 
 if __name__ == "__main__":
 
-    baudrate = 9600
-    inputFile = "/dev/ttyACM0"
+    # baudrate = 9600
+    # inputFile = "/dev/ttyACM0"
     
-    try:
-        ser = serial.Serial(inputFile, baudrate=baudrate, timeout=0.5)
-        print(f"Opened serial port {ser.portstr}")
-    except:
-        print(f"Can't open serial port {inputFile}")
-        sys.exit(1)
+    # try:
+    #     ser = serial.Serial(inputFile, baudrate=baudrate, timeout=0.5)
+    #     print(f"Opened serial port {ser.portstr}")
+    # except:
+    #     print(f"Can't open serial port {inputFile}")
+    #     sys.exit(1)
 
 
     app = QApplication(sys.argv)
-    window = Spectraplot(ser)
+    window = Spectraplot()
     window.show()
     app.exec()
