@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QDockWidget,
     QListWidget,
     QHBoxLayout,
+    QVBoxLayout,
     QTextEdit
 )
 import pyqtgraph as pg
@@ -60,7 +61,7 @@ class Spectraplot(QMainWindow):
         self.console = QTextEdit()
         self.console.setReadOnly(True)
 
-        self.layout = QHBoxLayout()
+        self.layout = QVBoxLayout()
         self.layout.addWidget(self.pw)
         self.layout.addWidget(self.console)
         self.layout.setContentsMargins(30, 60, 60, 30)
