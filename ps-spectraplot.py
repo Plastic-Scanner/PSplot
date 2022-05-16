@@ -12,11 +12,14 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHBoxLayout,
     QVBoxLayout,
-    QTextEdit
+    QTextEdit,
+    QPushButton,
+    QFileDialog
 )
 import pyqtgraph as pg
 import numpy as np
 import serial
+import csv
 
 class Spectraplot(QMainWindow):
     def __init__(self):
@@ -63,9 +66,14 @@ class Spectraplot(QMainWindow):
         self.table.setColumnCount(len(self.wavelengths))
         self.table.setHorizontalHeaderLabels([str(x) for x in self.wavelengths])
 
+        ## Button
+        self.exportBtn = QPushButton("E&xport CSV")
+        self.exportBtn.clicked.connect(self.exportCsv)
+
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.pw)
         self.layout.addWidget(self.table)
+        self.layout.addWidget(self.exportBtn)
         self.layout.setContentsMargins(30, 60, 60, 30)
         self.widget.setLayout(self.layout)
         
@@ -141,6 +149,23 @@ class Spectraplot(QMainWindow):
     def listToString(self, data):
         return " ".join([f"{i:.4f}" for i in data])
 
+    def exportCsv(self):
+        fname, _ = QFileDialog.getSaveFileName(self, 'Save File')
+        with open(fname, 'w', newline='') as csvfile:
+            rows = self.table.rowCount()
+            cols = self.table.columnCount()
+            writer = csv.writer(csvfile)
+            writer.writerow(self.wavelengths)
+            for i in range(rows):
+                row = []
+                for j in range(cols):
+                    try:
+                        val = self.table.item(i, j).text()
+                    except AttributeError:  # sometimes table.item() returns None - bug in fw/serial comm?
+                        val = ""
+                    row.append(val)
+                writer.writerow(row)
+            
     def plot(self, data):
         self.pc.setData(self.wavelengths, data)
 
