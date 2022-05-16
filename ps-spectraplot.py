@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QDockWidget,
     QListWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QHBoxLayout,
     QVBoxLayout,
     QTextEdit
@@ -61,10 +63,19 @@ class Spectraplot(QMainWindow):
         self.console = QTextEdit()
         self.console.setReadOnly(True)
 
+        ## Table output
+        self.table = QTableWidget()
+        self.table.setColumnCount(len(self.wavelengths))
+        self.table.setHorizontalHeaderLabels([str(x) for x in self.wavelengths])
+
         self.layout = QVBoxLayout()
+        self.innerLayout = QHBoxLayout()
+        self.innerLayout.addWidget(self.console)
+        self.innerLayout.addWidget(self.table)
+        
         self.layout.addWidget(self.pw)
-        self.layout.addWidget(self.console)
         self.layout.setContentsMargins(30, 60, 60, 30)
+        self.layout.addLayout(self.innerLayout)
         self.widget.setLayout(self.layout)
         
         self.setWindowTitle("My plotter")
@@ -108,7 +119,17 @@ class Spectraplot(QMainWindow):
         elif (e.key() == Qt.Key.Key_Space):
             data = self.getMeasurement()
             dataStr = self.listToString(data)
+            
+            # append to console
             self.console.append(dataStr)
+            
+            # append to table
+            nRows = self.table.rowCount()
+            self.table.setRowCount(nRows+1)
+            for col, val in enumerate(dataStr.split()):
+                cell = QTableWidgetItem(val)
+                self.table.setItem(nRows, col, cell)
+
             self.plot(data)
                 
 
@@ -119,6 +140,7 @@ class Spectraplot(QMainWindow):
 
             # read response
             line = self.serial.readline()
+            print(line)
             line = line.decode()
 
             # parse data
