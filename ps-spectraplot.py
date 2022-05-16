@@ -52,6 +52,7 @@ class Spectraplot(QMainWindow):
 
         self.pi.hideButtons()
         self.pi.setMenuEnabled(False)
+        self.pi.setMouseEnabled(x=False, y=True)
         xPadding = min(self.wavelengths) * 0.1
         self.pi.setLimits(
             xMin=min(self.wavelengths) - xPadding, 
@@ -97,12 +98,12 @@ class Spectraplot(QMainWindow):
         elif (e.key() == Qt.Key.Key_Up or
               e.key() == Qt.Key.Key_W or
               e.key() == Qt.Key.Key_Plus):
-            self.pi.getViewBox().scaleBy((0.9, 0.9))
+            self.pi.getViewBox().scaleBy((1, 0.9))
 
         elif (e.key() == Qt.Key.Key_Down or
               e.key() == Qt.Key.Key_S or
               e.key() == Qt.Key.Key_Minus):
-            self.pi.getViewBox().scaleBy((1.1, 1.1))
+            self.pi.getViewBox().scaleBy((1, 1.1))
 
         elif (e.key() == Qt.Key.Key_Left or
               e.key() == Qt.Key.Key_A):
