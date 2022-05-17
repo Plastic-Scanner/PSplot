@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -20,6 +21,35 @@ import pyqtgraph as pg
 import numpy as np
 import serial
 import csv
+
+class Table(QTableWidget):
+    """
+    this class extends QTableWidget
+    * supports copying multiple cell's text onto the clipboard
+    * formatted specifically to work with multiple-cell paste into programs
+      like google sheets, excel, or numbers
+    Taken and modified from https://stackoverflow.com/a/68598423/5539470 
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_C:
+                copied_cells = sorted(self.selectedIndexes())
+
+                copy_text = ''
+                max_column = copied_cells[-1].column()
+                for c in copied_cells:
+                    copy_text += self.item(c.row(), c.column()).text()
+                    if c.column() == max_column:
+                        copy_text += '\n'
+                    else:
+                        copy_text += '\t'
+                    
+                QApplication.clipboard().setText(copy_text)
 
 class Spectraplot(QMainWindow):
     def __init__(self):
@@ -64,7 +94,7 @@ class Spectraplot(QMainWindow):
 
         ## Table output
         self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
-        self.table = QTableWidget()
+        self.table = Table()
         self.table.setColumnCount(len(self.tableHeader))
         self.table.setHorizontalHeaderLabels(self.tableHeader)
 
