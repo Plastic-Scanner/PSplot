@@ -128,7 +128,6 @@ class Spectraplot(QMainWindow):
             for col, val in enumerate(dataStr.split(), start=1):
                 cell = QTableWidgetItem(val)
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                print(cell.flags())
                 self.table.setItem(nRows, col, cell)
             self.table.scrollToBottom()
             self.plot(data)
