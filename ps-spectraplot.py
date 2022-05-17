@@ -63,9 +63,10 @@ class Spectraplot(QMainWindow):
         self.pi.setTitle('Reflectance')
 
         ## Table output
+        self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
         self.table = QTableWidget()
-        self.table.setColumnCount(len(self.wavelengths))
-        self.table.setHorizontalHeaderLabels([str(x) for x in self.wavelengths])
+        self.table.setColumnCount(len(self.tableHeader))
+        self.table.setHorizontalHeaderLabels(self.tableHeader)
 
         ## Button
         self.exportBtn = QPushButton("E&xport CSV")
@@ -123,8 +124,11 @@ class Spectraplot(QMainWindow):
             # append to table
             nRows = self.table.rowCount()
             self.table.setRowCount(nRows+1)
-            for col, val in enumerate(dataStr.split()):
+            self.table.setItem(nRows, 0, QTableWidgetItem(""))    # default sample name
+            for col, val in enumerate(dataStr.split(), start=1):
                 cell = QTableWidgetItem(val)
+                cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                print(cell.flags())
                 self.table.setItem(nRows, col, cell)
             self.table.scrollToBottom()
             self.plot(data)
