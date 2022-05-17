@@ -124,10 +124,10 @@ class Spectraplot(QMainWindow):
             # append to table
             nRows = self.table.rowCount()
             self.table.setRowCount(nRows+1)
-            self.table.setItem(nRows, 0, QTableWidgetItem(""))    # default sample name
+            self.table.setItem(nRows, 0, QTableWidgetItem(""))    # sample name (user-editable, empty by default)
             for col, val in enumerate(dataStr.split(), start=1):
                 cell = QTableWidgetItem(val)
-                cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable) # disable editing of cells
                 self.table.setItem(nRows, col, cell)
             self.table.scrollToBottom()
             self.plot(data)
