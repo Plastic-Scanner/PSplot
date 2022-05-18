@@ -60,7 +60,8 @@ class Spectraplot(QMainWindow):
         # HARDCODED SETTINGS
         self.wavelengths = [855, 940, 1050, 1300, 1450, 1550, 1650, 1720]    # in nanometers, 20nm FWHM
         baudrate = 9600
-        inputFile = "COM5"
+        inputFile = "/dev/ttyACM0"
+        # inputFile = "COM5"
         self.baseline = None
         
         try:
@@ -79,20 +80,25 @@ class Spectraplot(QMainWindow):
         ## Plot
         self.pw = pg.PlotWidget(background=None)
         self.pi = self.pw.getPlotItem()
-        self.pc = self.pw.plot(self.wavelengths, np.zeros(8), symbol="o")
-        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-
+        self.pc = self.pw.plot()
+        self.pc.setSymbol("o")
         self.pi.hideButtons()
         self.pi.setMenuEnabled(False)
         self.pi.setMouseEnabled(x=False, y=True)
-        xPadding = min(self.wavelengths) * 0.1
+        self.xPadding = min(self.wavelengths) * 0.1
+        self.yPadding = 0.01
         self.pi.setLimits(
-            xMin=min(self.wavelengths) - xPadding, 
-            xMax=max(self.wavelengths) + xPadding,
+            xMin=min(self.wavelengths) - self.xPadding, 
+            xMax=max(self.wavelengths) + self.xPadding,
+            yMin= 0 - self.yPadding,
             )
         self.pi.setLabel('bottom', "Wavelength [nm]")
-        self.pi.setLabel('left', "NIR output", units='V')
+        self.pi.setLabel('left', "NIR output", units='V', unitPrefix="m")
         self.pi.setTitle('Reflectance')
+        
+        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
+        self.pw.setYRange(0, 0.3, padding=self.yPadding)
+        self.pw.disableAutoRange()
 
         ## Table output
         self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
@@ -100,12 +106,14 @@ class Spectraplot(QMainWindow):
         self.table.setColumnCount(len(self.tableHeader))
         self.table.setHorizontalHeaderLabels(self.tableHeader)
 
-        ## Button
+        ## Buttons
         self.exportBtn = QPushButton("E&xport CSV")
         self.exportBtn.clicked.connect(self.exportCsv)
 
         self.calibrateBtn = QPushButton("C&alibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
+
+
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.pw)
         self.layout.addWidget(self.table)
@@ -203,6 +211,9 @@ class Spectraplot(QMainWindow):
         button = QMessageBox.question(self, "Calibration", "Is the spectralon sample on the sensor?")
         if button == QMessageBox.StandardButton.Yes:
             self.baseline = self.getMeasurement()
+
+        # Change default zoom/scaling
+        self.pw.setYRange(0, 1.5, padding=self.yPadding)
 
     def listToString(self, data):
         return " ".join([f"{i:.4f}" for i in data])
