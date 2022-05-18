@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import sys
-from tkinter import BASELINE
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
@@ -112,7 +111,6 @@ class Spectraplot(QMainWindow):
 
         self.calibrateBtn = QPushButton("C&alibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
-
 
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.pw)
