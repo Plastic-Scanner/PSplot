@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sys
+from tkinter import BASELINE
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
@@ -15,7 +16,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QTextEdit,
     QPushButton,
-    QFileDialog
+    QFileDialog,
+    QMessageBox
 )
 import pyqtgraph as pg
 import numpy as np
@@ -56,10 +58,10 @@ class Spectraplot(QMainWindow):
         super().__init__()
 
         # HARDCODED SETTINGS
-        self.wavelengths = [855, 940, 1050, 1200, 1300, 1450, 1550, 1650]    # in nanometers, 20nm FWHM
-
+        self.wavelengths = [855, 940, 1050, 1300, 1450, 1550, 1650, 1720]    # in nanometers, 20nm FWHM
         baudrate = 9600
-        inputFile = "/dev/ttyACM0"
+        inputFile = "COM5"
+        self.baseline = None
         
         try:
             self.serial = serial.Serial(inputFile, baudrate=baudrate, timeout=0.5)
@@ -102,10 +104,13 @@ class Spectraplot(QMainWindow):
         self.exportBtn = QPushButton("E&xport CSV")
         self.exportBtn.clicked.connect(self.exportCsv)
 
+        self.calibrateBtn = QPushButton("C&alibrate with spectralon")
+        self.calibrateBtn.clicked.connect(self.calibrate)
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.pw)
         self.layout.addWidget(self.table)
         self.layout.addWidget(self.exportBtn)
+        self.layout.addWidget(self.calibrateBtn)
         self.layout.setContentsMargins(30, 60, 60, 30)
         self.widget.setLayout(self.layout)
         
@@ -149,19 +154,33 @@ class Spectraplot(QMainWindow):
         
         elif (e.key() == Qt.Key.Key_Space):
             data = self.getMeasurement()
-            dataStr = self.listToString(data)
-                        
-            # append to table
-            nRows = self.table.rowCount()
-            self.table.setRowCount(nRows+1)
-            self.table.setItem(nRows, 0, QTableWidgetItem(""))    # sample name (user-editable, empty by default)
-            for col, val in enumerate(dataStr.split(), start=1):
-                cell = QTableWidgetItem(val)
-                cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable) # disable editing of cells
-                self.table.setItem(nRows, col, cell)
-            self.table.scrollToBottom()
-            self.plot(data)
-                
+            if self.baseline is not None:
+                dataCalibrated = []
+                for x in range(len(data)):
+                    dataCalibrated.append(data[x]/self.baseline[x])
+                dataStr = self.listToString(dataCalibrated)
+                # append to table
+                nRows = self.table.rowCount()
+                self.table.setRowCount(nRows+1)
+                self.table.setItem(nRows, 0, QTableWidgetItem(""))    # sample name (user-editable, empty by default)
+                for col, val in enumerate(dataStr.split(), start=1):
+                    cell = QTableWidgetItem(val)
+                    cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable) # disable editing of cells
+                    self.table.setItem(nRows, col, cell)
+                self.table.scrollToBottom()
+                self.plot(dataCalibrated)
+            else:
+                dataStr = self.listToString(data)
+                nRows = self.table.rowCount()
+                self.table.setRowCount(nRows+1)
+                self.table.setItem(nRows, 0, QTableWidgetItem(""))    # sample name (user-editable, empty by default)
+                for col, val in enumerate(dataStr.split(), start=1):
+                    cell = QTableWidgetItem(val)
+                    cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable) # disable editing of cells
+                    self.table.setItem(nRows, col, cell)
+                self.table.scrollToBottom()
+                self.plot(data)
+
 
     def getMeasurement(self):
         if self.serial is not None:
@@ -179,6 +198,11 @@ class Spectraplot(QMainWindow):
             # dummy data
             data = [123.1233, 234.2344, 456.4566, 567.5677, 678.6788, 789.7899, 890.8900, 901.9011]
         return data
+    
+    def calibrate(self):
+        button = QMessageBox.question(self, "Calibration", "Is the spectralon sample on the sensor?")
+        if button == QMessageBox.StandardButton.Yes:
+            self.baseline = self.getMeasurement()
 
     def listToString(self, data):
         return " ".join([f"{i:.4f}" for i in data])
@@ -199,7 +223,7 @@ class Spectraplot(QMainWindow):
                         val = ""
                     row.append(val)
                 writer.writerow(row)
-            
+
     def plot(self, data):
         self.pc.setData(self.wavelengths, data)
 
