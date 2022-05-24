@@ -94,6 +94,8 @@ class Spectraplot(QMainWindow):
         self.pi.setMouseEnabled(x=False, y=True)
         self.xPadding = min(self.wavelengths) * 0.1
         self.yPadding = 0.01
+        self.yMin = 0
+        self.yMax = 0.35
         self.pi.setLimits(
             xMin=min(self.wavelengths) - self.xPadding, 
             xMax=max(self.wavelengths) + self.xPadding,
@@ -104,7 +106,7 @@ class Spectraplot(QMainWindow):
         self.pi.setTitle('Reflectance')
         
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-        self.pw.setYRange(0, 0.3, padding=self.yPadding)
+        self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
         self.pw.disableAutoRange()
 
         ## Table output
@@ -195,9 +197,8 @@ class Spectraplot(QMainWindow):
             self.pi.getViewBox().translateBy((+10, 0))
 
         elif (e.key() == Qt.Key.Key_Home):
-            # self.pi.getViewBox().autoRange(padding=0.1)
             self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-            self.pw.setYRange(0, 0.3, padding=self.yPadding)
+            self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
         
         elif (e.key() == Qt.Key.Key_Space):
             data = self.getMeasurement()
