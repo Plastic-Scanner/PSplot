@@ -195,7 +195,9 @@ class Spectraplot(QMainWindow):
             self.pi.getViewBox().translateBy((+10, 0))
 
         elif (e.key() == Qt.Key.Key_Home):
-            self.pi.getViewBox().autoRange(padding=0.1)
+            # self.pi.getViewBox().autoRange(padding=0.1)
+            self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
+            self.pw.setYRange(0, 0.3, padding=self.yPadding)
         
         elif (e.key() == Qt.Key.Key_Space):
             data = self.getMeasurement()
@@ -241,7 +243,8 @@ class Spectraplot(QMainWindow):
             data = [float(x) for x in data if x != '']
         else:
             # dummy data
-            data = [123.1233, 234.2344, 456.4566, 567.5677, 678.6788, 789.7899, 890.8900, 901.9011]
+            data = [0.2278, 0.2264, 0.2178, 0.2379, 0.2276, 0.2281, 0.2298, 0.2264]
+
         return data
     
     def calibrate(self):
