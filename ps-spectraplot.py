@@ -79,8 +79,6 @@ class Spectraplot(QMainWindow):
         
         ## Serial selection
         self.serialList = ComboBox()
-        self.serialList.addItem("None")
-        self.serialList.setInsertPolicy(QComboBox.InsertPolicy.InsertAtTop)
         self.serialList.onPopup.connect(self.serialScan)
         self.serialList.activated.connect(self.serialConnect)
 
@@ -137,18 +135,20 @@ class Spectraplot(QMainWindow):
         self.center()
         self.setCentralWidget(self.widget)
         
-        # Connect to serial device
-        if self.serialList.count() > 0:
-            self.serialConnect(self.serialList.itemText(0))     # open the first serial device
+        # Connect to the serial device (first, newest detected) 
+        self.serialScan()
+        self.serialList.setCurrentIndex(0)
+        self.serialConnect(0)
+
+        self.pi.setFocus()
    
     def serialScan(self):
         """ Scans for available serial devices and updates the list """ 
         
         self.serialList.clear()
-        self.serialList.addItem("None")
+        self.serialList.insertItem(0, "None")
         for dev in list(serial.tools.list_ports.comports()):
-            self.serialList.addItem(dev.device)
-
+            self.serialList.insertItem(0, dev.device)
 
     def serialConnect(self, index):
         """ Connects to the serial device (e.g. /dev/ttyACM0) """
