@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -16,12 +16,23 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QPushButton,
     QFileDialog,
-    QMessageBox
+    QMessageBox,
+    QComboBox
 )
 import pyqtgraph as pg
 import numpy as np
 import serial
 import csv
+import serial.tools.list_ports
+
+
+class ComboBox(QComboBox):
+    onPopup = pyqtSignal()
+
+    def showPopup(self):
+        self.onPopup.emit()
+        super(ComboBox, self).showPopup()
+
 
 class Table(QTableWidget):
     """
@@ -58,24 +69,21 @@ class Spectraplot(QMainWindow):
 
         # HARDCODED SETTINGS
         self.wavelengths = [855, 940, 1050, 1300, 1450, 1550, 1650, 1720]    # in nanometers, 20nm FWHM
-        baudrate = 9600
-        inputFile = "/dev/ttyACM0"
-        # inputFile = "COM5"
+        self.baudrate = 9600
         self.baseline = None
-        
-        try:
-            self.serial = serial.Serial(inputFile, baudrate=baudrate, timeout=0.5)
-            print(f"Opened serial port {self.serial.portstr}")
-            self.serial.readline()  # Consume the "Plastic scanner initialized line"
+        self.serial = None
 
-        except:
-            print(f"Can't open serial port {inputFile}")
-            print("using dummy data")
-            self.serial = None
 
         # Widgets
         self.widget = QWidget()     # Container widget
         
+        ## Serial selection
+        self.serialList = ComboBox()
+        self.serialList.addItem("None")
+        self.serialList.setInsertPolicy(QComboBox.InsertPolicy.InsertAtTop)
+        self.serialList.onPopup.connect(self.serialScan)
+        self.serialList.activated.connect(self.serialConnect)
+
         ## Plot
         self.pw = pg.PlotWidget(background=None)
         self.pi = self.pw.getPlotItem()
@@ -113,6 +121,7 @@ class Spectraplot(QMainWindow):
         self.calibrateBtn.clicked.connect(self.calibrate)
 
         self.layout = QVBoxLayout()
+        self.layout.addWidget(self.serialList)
         self.layout.addWidget(self.pw)
         self.layout.addWidget(self.table)
         self.layout.addWidget(self.exportBtn)
@@ -126,6 +135,36 @@ class Spectraplot(QMainWindow):
         self.center()
         self.setCentralWidget(self.widget)
         
+        # Connect to serial device
+        if self.serialList.count() > 0:
+            self.serialConnect(self.serialList.itemText(0))     # open the first serial device
+   
+    def serialScan(self):
+        """ Scans for available serial devices and updates the list """ 
+        
+        self.serialList.clear()
+        self.serialList.addItem("None")
+        for dev in list(serial.tools.list_ports.comports()):
+            self.serialList.addItem(dev.device)
+
+
+    def serialConnect(self, index):
+        """ Connects to the serial device (e.g. /dev/ttyACM0) """
+
+        if self.serial is not None:
+            self.serial.close()                 # Close previously opened port, if exist
+
+        port = self.serialList.currentText()
+        
+        try:
+            self.serial = serial.Serial(port, baudrate=self.baudrate, timeout=0.5)
+            print(f"Opened serial port {self.serial.portstr}")
+            self.serial.readline()  # Consume the "Plastic scanner initialized line"
+        except Exception as e:
+            print(f"Can't open serial port '{port}', using dummy data")
+            self.serial = None
+        
+   
     def center(self):
         qr = self.frameGeometry()
         cp = self.screen().availableGeometry().center()
