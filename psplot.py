@@ -63,7 +63,7 @@ class Table(QTableWidget):
                     
                 QApplication.clipboard().setText(copy_text)
 
-class Spectraplot(QMainWindow):
+class PsPlot(QMainWindow):
     def __init__(self):
         super().__init__()
 
@@ -283,6 +283,6 @@ class Spectraplot(QMainWindow):
 if __name__ == "__main__":
 
     app = QApplication(sys.argv)
-    window = Spectraplot()
+    window = PsPlot()
     window.show()
     app.exec()
