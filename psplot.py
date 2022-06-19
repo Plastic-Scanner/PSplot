@@ -206,7 +206,6 @@ class PsPlot(QMainWindow):
         self.move(qr.topLeft())
 
     def centerPlot(self) -> None:
-        print("should center now")
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
         self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
