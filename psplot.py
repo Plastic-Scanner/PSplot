@@ -3,9 +3,9 @@ import csv
 from collections import deque
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QKeySequence, QKeyEvent, QColor
-from PyQt5.QtWidgets import (
+from pyqtgraph.Qt.QtCore import Qt, pyqtSignal, QT_VERSION_STR
+from pyqtgraph.Qt.QtGui import QKeySequence, QKeyEvent, QColor
+from pyqtgraph.Qt.QtWidgets import (
     QApplication,
     QComboBox,
     QCheckBox,
@@ -106,7 +106,7 @@ class PsPlot(QMainWindow):
         self.serialList.onPopup.connect(self.serialScan)
         self.serialList.activated.connect(self.serialConnect)
         # make it take up the maximum possible space
-        self.serialList.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.serialList.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         # serial notification
         self.serialNotif = QLabel()
@@ -138,7 +138,7 @@ class PsPlot(QMainWindow):
             yMin=0 - self.yPadding,
         )
         self.pi.setLabel("left", "NIR output", units="V", unitPrefix="m")
-        self.pi.setLabel("bottom", "Wavelength", units="m", unitPrefix="n")
+        self.pi.setLabel('bottom', "Wavelength (nm)") # somehow  `units="m", unitPrefix="n"` does not work here
         self.pi.setTitle("Reflectance")
 
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
@@ -285,7 +285,7 @@ class PsPlot(QMainWindow):
         # use calibration if possible
         if self.baseline is not None:
             dataCalibrated = [dat / base for dat, base in zip(data, self.baseline)]
-            data = dataCalibrated
+            #  data = dataCalibrated
 
         self.addToTable(data)
 
@@ -363,7 +363,7 @@ class PsPlot(QMainWindow):
 
     def clearCalibration(self) -> None:
         self.baseline = None
-        self.plot()
+        self.plot(self.old_data[-1])
 
     def listToString(self, data: List[float]) -> str:
         return " ".join([f"{i:.4f}" for i in data])
@@ -408,6 +408,7 @@ class PsPlot(QMainWindow):
 
 
 if __name__ == "__main__":
+    print(f"App is running on QT version {QT_VERSION_STR}")
     app = QApplication(sys.argv)
     window = PsPlot()
     window.show()
