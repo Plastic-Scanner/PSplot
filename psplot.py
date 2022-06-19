@@ -203,7 +203,8 @@ class PsPlot(QMainWindow):
         self.serialList.setCurrentIndex(0)
         self.serialConnect(0)
 
-        self.pi.setFocus()
+        self.pw.setFocus(True)
+        self.widget.setTabOrder(self.pw, self.serialList)
 
     def serialScan(self) -> None:
         """Scans for available serial devices and updates the list"""
