@@ -138,7 +138,7 @@ class PsPlot(QMainWindow):
             yMin=0 - self.yPadding,
         )
         self.pi.setLabel("left", "NIR output", units="V", unitPrefix="m")
-        self.pi.setLabel('bottom', "Wavelength", units="m", unitPrefix="n")
+        self.pi.setLabel("bottom", "Wavelength", units="m", unitPrefix="n")
         self.pi.setTitle("Reflectance")
 
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
