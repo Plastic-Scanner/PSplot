@@ -3,11 +3,12 @@ import csv
 from collections import deque
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QKeyEvent
-from PyQt6.QtWidgets import (
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QKeySequence, QKeyEvent, QColor
+from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
+    QCheckBox,
     QDockWidget,
     QFileDialog,
     QHBoxLayout,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -27,13 +29,13 @@ import random
 import serial
 import serial.tools.list_ports
 import sys
-from typing import List
+from typing import List, Optional
 
 
 class ComboBox(QComboBox):
     onPopup = pyqtSignal()
 
-    def showPopup(self):
+    def showPopup(self) -> None:
         self.onPopup.emit()
         super(ComboBox, self).showPopup()
 
@@ -47,10 +49,10 @@ class Table(QTableWidget):
     Taken and modified from https://stackoverflow.com/a/68598423/5539470
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event) -> None:
         super().keyPressEvent(event)
 
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -88,6 +90,14 @@ class PsPlot(QMainWindow):
         self.baseline = None
         self.serial = None
 
+        ## To keep track
+        # used for also plotting previouse values
+        self.old_data = deque(maxlen=3)
+        # to keep track of the amount of calibrations done
+        self.calibration_counter = 0
+        # holds labers for each row
+        self.row_labels = []
+
         # Widgets
         self.widget = QWidget()  # Container widget
 
@@ -95,6 +105,16 @@ class PsPlot(QMainWindow):
         self.serialList = ComboBox()
         self.serialList.onPopup.connect(self.serialScan)
         self.serialList.activated.connect(self.serialConnect)
+        # make it take up the maximum possible space
+        self.serialList.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        # serial notification
+        self.serialNotif = QLabel()
+
+        # serial horizonal layout
+        self.horizontalSerialLayout = QHBoxLayout()
+        self.horizontalSerialLayout.addWidget(self.serialList)
+        self.horizontalSerialLayout.addWidget(self.serialNotif)
 
         ## Plot
         self.pw = pg.PlotWidget(background=None)
@@ -109,8 +129,7 @@ class PsPlot(QMainWindow):
         self.pc.setSymbol("o")
 
         self.xPadding = min(self.wavelengths) * 0.1
-        #  self.yPadding = 0.01
-        self.yPadding = 0.0001
+        self.yPadding = 0.015
         self.yMin = 0
         self.yMax = 0.35
         self.pi.setLimits(
@@ -118,41 +137,50 @@ class PsPlot(QMainWindow):
             xMax=max(self.wavelengths) + self.xPadding,
             yMin=0 - self.yPadding,
         )
-        self.pi.setLabel("bottom", "Wavelength [nm]")
         self.pi.setLabel("left", "NIR output", units="V", unitPrefix="m")
         self.pi.setTitle("Reflectance")
 
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
         self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
         self.pw.disableAutoRange()
-        # used for also plotting previouse values
-        self.old_data = deque(maxlen=3)
 
         ## Table output
         self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
         self.table = Table()
         self.table.setColumnCount(len(self.tableHeader))
+        self.table.setHorizontalHeaderLabels(self.tableHeader)
 
         ## Buttons
+        # center, auto-restoreAxis and clear
+        self.centerBtn = QPushButton("&Restore axis")
+        self.centerBtn.clicked.connect(self.centerPlot)
+
+        self.autocenterChbx = QCheckBox("auto-restore axis")
+
+        self.clearPlotBtn = QPushButton("C&lear graph")
+        self.clearPlotBtn.clicked.connect(self.clearGraph)
+
+        self.clearCalibrationBtn = QPushButton("Clear Calibration")
+        self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
+
+        horizontalBtnLayout = QHBoxLayout()
+        horizontalBtnLayout.addWidget(self.centerBtn)
+        horizontalBtnLayout.addWidget(self.autocenterChbx)
+        horizontalBtnLayout.addWidget(self.clearPlotBtn)
+        horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
+
+        # export and calibrate
         self.exportBtn = QPushButton("E&xport CSV")
         self.exportBtn.clicked.connect(self.exportCsv)
 
         self.calibrateBtn = QPushButton("C&alibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
 
-        self.centerBtn = QPushButton("&Restore axis")
-        self.centerBtn.clicked.connect(self.centerPlot)
-
-        self.clearBtn = QPushButton("R&emove previous measurements")
-        self.clearBtn.clicked.connect(self.clearGraph)
-
+        # add all layouts
         self.layout = QVBoxLayout()
-        self.layout.addWidget(self.serialList)
+        self.layout.addLayout(self.horizontalSerialLayout)
         self.layout.addWidget(self.pw)
-        horizontal = QHBoxLayout()
-        horizontal.addWidget(self.centerBtn)
-        horizontal.addWidget(self.clearBtn)
-        self.layout.addLayout(horizontal)
+        self.layout.addLayout(horizontalBtnLayout)
         self.layout.addWidget(self.table)
         self.layout.addWidget(self.exportBtn)
         self.layout.addWidget(self.calibrateBtn)
@@ -192,12 +220,15 @@ class PsPlot(QMainWindow):
             self.serial = serial.Serial(port, baudrate=self.baudrate, timeout=0.5)
             print(f"Opened serial port {self.serial.portstr}")
             self.serial.readline()  # Consume the "Plastic scanner initialized line"
+            self.serialNotif.setText("Using real data")
         except serial.serialutil.SerialException:
             print(f"Cannot open serial port '{port}', using dummy data")
             self.serial = None
+            self.serialNotif.setText("Using dummy data")
         except Exception as e:
             print(f"Can't open serial port '{port}', using dummy data")
             self.serial = None
+            self.serialNotif.setText("Using dummy data")
 
     def center(self) -> None:
         qr = self.frameGeometry()
@@ -210,9 +241,7 @@ class PsPlot(QMainWindow):
         self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
     def clearGraph(self) -> None:
-        self.data.clear()
         self.old_data.clear()
-        #  self.pc.setData()
         self.pw.clear()
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
@@ -244,43 +273,54 @@ class PsPlot(QMainWindow):
             self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         elif e.key() == Qt.Key.Key_Space:
-            self.getMeasurement()
-            data = self.data
+            data = self.getMeasurement()
+            self.addMeasurement(data)
+            self.plot(data)
 
-            if self.baseline is not None:
-                dataCalibrated = []
-                for x in range(len(data)):
-                    dataCalibrated.append(data[x] / self.baseline[x])
-                self.data = dataCalibrated
-                dataStr = self.listToString(dataCalibrated)
-            else:
-                self.data = data
-                dataStr = self.listToString(data)
+    def addCalibrationMeasurement(self, data: List[float]) -> None:
+        self.addToTable(data, True)
 
-            # append to table
-            nRows = self.table.rowCount()
-            self.table.setRowCount(nRows + 1)
-            self.table.setItem(
-                nRows, 0, QTableWidgetItem("")
-            )  # sample name (user-editable, empty by default)
+    def addMeasurement(self, data: List[float]) -> None:
+        # use calibration if possible
+        if self.baseline is not None:
+            dataCalibrated = [dat / base for dat, base in zip(data, self.baseline)]
+            data = dataCalibrated
 
-            for col, val in enumerate(dataStr.split(), start=1):
-                cell = QTableWidgetItem(val)
-                cell.setFlags(
-                    cell.flags() & ~Qt.ItemFlag.ItemIsEditable
-                )  # disable editing of cells
-                self.table.setItem(nRows, col, cell)
-            self.table.scrollToBottom()
+        self.addToTable(data)
 
-            # plot
-            if self.baseline is not None:
-                self.plot()
-                self.old_data.clear()
-            else:
-                self.plot()
-                self.old_data.append(data)
+        self.old_data.append(data)
 
-    def getMeasurement(self) -> None:
+    def addToTable(
+        self, data: List[float], calibrated_measurement: bool = False
+    ) -> None:
+        # add row
+        nRows = self.table.rowCount()
+        self.table.setRowCount(nRows + 1)
+        self.table.setItem(
+            nRows, 0, QTableWidgetItem("")
+        )  # sample name (user-editable, empty by default)
+        if calibrated_measurement:
+            self.row_labels.append(f"c {self.calibration_counter}")
+        else:
+            self.row_labels.append(str(nRows + 1 - self.calibration_counter))
+        self.table.setVerticalHeaderLabels(self.row_labels)
+
+        # add value for every column of new row
+        dataStr = self.listToString(data)
+        for col, val in enumerate(dataStr.split(), start=1):
+            cell = QTableWidgetItem(val)
+            cell.setFlags(
+                cell.flags() & ~Qt.ItemFlag.ItemIsEditable
+            )  # disable editing of cells
+
+            # use a different color if the measurement was taken for calibration
+            if calibrated_measurement:
+                cell.setBackground(QColor.fromRgb(100, 0, 0))
+            self.table.setItem(nRows, col, cell)
+
+        self.table.scrollToBottom()
+
+    def getMeasurement(self) -> List[float]:
         if self.serial is not None:
             # send serial command
             self.serial.write(b"scan\n")
@@ -291,7 +331,7 @@ class PsPlot(QMainWindow):
 
             # parse data
             data = line.strip("> ").strip("\r\n").split("\t")
-            self.data = [float(x) for x in data if x != ""]
+            data = [float(x) for x in data if x != ""]
         else:
             # dummy data with random noise
             data = data = [
@@ -304,7 +344,9 @@ class PsPlot(QMainWindow):
                 0.2298,
                 0.2264,
             ]
-            self.data = [x + random.uniform(0.0015, 0.0080) for x in data]
+            data = [x + random.uniform(0.0015, 0.0080) for x in data]
+
+        return data
 
     def calibrate(self) -> None:
         button = QMessageBox.question(
@@ -312,9 +354,15 @@ class PsPlot(QMainWindow):
         )
         if button == QMessageBox.StandardButton.Yes:
             self.baseline = self.getMeasurement()
+            self.calibration_counter += 1
+            self.addCalibrationMeasurement(self.baseline)
+            self.old_data.clear()
 
-        # Change default zoom/scaling
-        self.pw.setYRange(0, 1.5, padding=self.yPadding)
+        self.plot()
+
+    def clearCalibration(self) -> None:
+        self.baseline = None
+        self.plot()
 
     def listToString(self, data: List[float]) -> str:
         return " ".join([f"{i:.4f}" for i in data])
@@ -336,16 +384,26 @@ class PsPlot(QMainWindow):
                     row.append(val)
                 writer.writerow(row)
 
-    def plot(self) -> None:
+    def plot(self, data: Optional[List[float]] = None) -> None:
         # TODO make a deque for old plots so that all of the data does not need to be redrawn
         self.pw.clear()
+
+        # add the baseline of the last calibration
+        if self.baseline is not None:
+            pc = self.pw.plot(self.wavelengths, self.baseline, pen=(255, 0, 0))
+
         for dat in self.old_data:
             pc = self.pw.plot(
                 self.wavelengths, dat, pen=(0, 100, 0), symbolBrush=(0, 255, 0)
             )
             pc.setSymbol("x")
-        pc = self.pw.plot(self.wavelengths, self.data, symbolPen="w")
-        pc.setSymbol("o")
+
+        if data is not None:
+            pc = self.pw.plot(self.wavelengths, data, symbolPen="w")
+            pc.setSymbol("o")
+
+        if self.autocenterChbx.isChecked():
+            self.centerPlot()
 
 
 if __name__ == "__main__":
