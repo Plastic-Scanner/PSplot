@@ -2,10 +2,9 @@
 import csv
 from collections import deque
 import numpy as np
-import pyqtgraph as pg
-from pyqtgraph.Qt.QtCore import Qt, pyqtSignal, QT_VERSION_STR
-from pyqtgraph.Qt.QtGui import QKeySequence, QKeyEvent, QColor
-from pyqtgraph.Qt.QtWidgets import (
+from PyQt6.QtCore import Qt, pyqtSignal, QT_VERSION_STR
+from PyQt6.QtGui import QKeySequence, QKeyEvent, QColor, QPalette
+from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QCheckBox,
@@ -25,6 +24,7 @@ from pyqtgraph.Qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import pyqtgraph as pg
 import random
 import serial
 import serial.tools.list_ports
@@ -140,52 +140,56 @@ class PsPlot(QMainWindow):
             yMin=0 - self.yPadding,
         )
         self.pi.setLabel("left", "NIR output", units="V", unitPrefix="m")
-        self.pi.setLabel(
-            "bottom", "Wavelength (nm)"
-        )  # somehow  `units="m", unitPrefix="n"` does not work here
+        self.pi.setLabel("bottom", "Wavelength (nm)")
+        self.pi.getAxis("bottom").enableAutoSIPrefix(False)
         self.pi.setTitle("Reflectance")
 
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
         self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
-        self.pw.disableAutoRange()
 
         ## Table output
         self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
         self.table = Table()
         self.table.setColumnCount(len(self.tableHeader))
         self.table.setHorizontalHeaderLabels(self.tableHeader)
+        self.table.setColumnWidth(0, 200)
 
         ## Buttons
         # center, auto-restoreAxis and clear
-        self.centerBtn = QPushButton("&Restore axis")
-        self.centerBtn.clicked.connect(self.centerPlot)
+        self.axisRestoreBtn = QPushButton("Restore axis")
+        self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
 
-        self.autocenterChbx = QCheckBox("auto-restore axis")
+        self.axisAutoRestoreChbx = QCheckBox("auto-restore axis")
+        self.axisAutoRestoreChbx.clicked.connect(self.restoreAxisPlotChbxClick)
 
-        self.clearPlotBtn = QPushButton("C&lear graph")
+        self.axisAutoRangeChbx = QCheckBox("auto-center axis")
+        self.axisAutoRangeChbx.clicked.connect(self.centerAxisPlotChbxClick)
+
+        self.clearPlotBtn = QPushButton("Clear graph")
         self.clearPlotBtn.clicked.connect(self.clearGraph)
 
         self.clearCalibrationBtn = QPushButton("Clear Calibration")
         self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
 
-        horizontalBtnLayout = QHBoxLayout()
-        horizontalBtnLayout.addWidget(self.centerBtn)
-        horizontalBtnLayout.addWidget(self.autocenterChbx)
-        horizontalBtnLayout.addWidget(self.clearPlotBtn)
-        horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
+        self.horizontalBtnLayout = QHBoxLayout()
+        self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
+        self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
+        self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
+        self.horizontalBtnLayout.addWidget(self.clearPlotBtn)
+        self.horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
 
         # export and calibrate
-        self.exportBtn = QPushButton("E&xport CSV")
+        self.exportBtn = QPushButton("Export CSV")
         self.exportBtn.clicked.connect(self.exportCsv)
 
-        self.calibrateBtn = QPushButton("C&alibrate with spectralon")
+        self.calibrateBtn = QPushButton("Calibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
 
         # add all layouts
         self.layout = QVBoxLayout()
         self.layout.addLayout(self.horizontalSerialLayout)
         self.layout.addWidget(self.pw)
-        self.layout.addLayout(horizontalBtnLayout)
+        self.layout.addLayout(self.horizontalBtnLayout)
         self.layout.addWidget(self.table)
         self.layout.addWidget(self.exportBtn)
         self.layout.addWidget(self.calibrateBtn)
@@ -203,7 +207,7 @@ class PsPlot(QMainWindow):
         self.serialList.setCurrentIndex(0)
         self.serialConnect(0)
 
-        self.pw.setFocus(True)
+        self.pw.setFocus()
         self.widget.setTabOrder(self.pw, self.serialList)
 
     def serialScan(self) -> None:
@@ -242,7 +246,28 @@ class PsPlot(QMainWindow):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
-    def centerPlot(self) -> None:
+    def centerAxisPlotChbxClick(self) -> None:
+        self.pw.setFocus()
+        if self.axisAutoRangeChbx.isChecked():
+            self.axisAutoRestoreChbx.setChecked(0)
+            self.centerAxisPlot()
+
+    def centerAxisPlot(self) -> None:
+        # when coming from self.plot checking if it is checked is now done twice
+        self.pi.getViewBox().autoRange()
+        all_plotted_data = [x for y in self.old_data for x in y] + (self.baseline or [])
+        self.pi.getViewBox().setYRange(
+            min=min(all_plotted_data) - self.yPadding,
+            max=max(all_plotted_data) + self.yPadding,
+        )
+
+    def restoreAxisPlotChbxClick(self) -> None:
+        self.pw.setFocus()
+        if self.axisAutoRestoreChbx.isChecked():
+            self.axisAutoRangeChbx.setChecked(0)
+            self.restoreAxisPlot()
+
+    def restoreAxisPlot(self) -> None:
         self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
         self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
@@ -321,7 +346,9 @@ class PsPlot(QMainWindow):
 
             # use a different color if the measurement was taken for calibration
             if calibrated_measurement:
-                cell.setBackground(QColor.fromRgb(100, 0, 0))
+                cell.setForeground(
+                    self.table.palette().color(QPalette.ColorRole.Highlight)
+                )
             self.table.setItem(nRows, col, cell)
 
         self.table.scrollToBottom()
@@ -391,7 +418,6 @@ class PsPlot(QMainWindow):
                 writer.writerow(row)
 
     def plot(self, data: Optional[List[float]] = None) -> None:
-        # TODO make a deque for old plots so that all of the data does not need to be redrawn
         self.pw.clear()
 
         # add the baseline of the last calibration
@@ -404,17 +430,28 @@ class PsPlot(QMainWindow):
             )
             pc.setSymbol("x")
 
+        lineC = tuple(
+            self.pw.palette().color(QPalette.ColorRole.WindowText).getRgb()[:-1]
+        )
+        markC = tuple(
+            self.pw.palette().color(QPalette.ColorRole.Highlight).getRgb()[:-1]
+        )
+        pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="o", width=2)
         if data is not None:
-            pc = self.pw.plot(self.wavelengths, data, symbolPen="w")
+            pc = self.pw.plot(self.wavelengths, data, pen=pen)
             pc.setSymbol("o")
 
-        if self.autocenterChbx.isChecked():
-            self.centerPlot()
+        if self.axisAutoRestoreChbx.isChecked():
+            self.restoreAxisPlot()
+        if self.axisAutoRangeChbx.isChecked():
+            self.centerAxisPlot()
 
 
 if __name__ == "__main__":
     print(f"App is running on QT version {QT_VERSION_STR}")
-    app = QApplication(sys.argv)
+    # this should add some optimisations for high-DPI screens
+    # https://pyqtgraph.readthedocs.io/en/latest/how_to_use.html#hidpi-displays
+    app = pg.mkQApp()
     window = PsPlot()
     window.show()
     app.exec()
