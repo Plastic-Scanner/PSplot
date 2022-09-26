@@ -30,7 +30,7 @@ import serial
 import serial.tools.list_ports
 import sys
 from typing import List, Optional
-
+import time
 
 class ComboBox(QComboBox):
     onPopup = pyqtSignal()
@@ -77,22 +77,31 @@ class PsPlot(QMainWindow):
 
         # HARDCODED SETTINGS
         self.wavelengths = [
-            855,
+            415,
+            445,
+            480,
+            515,
+            555,
+            590,
+            630,
+            680,
+            910,
             940,
             1050,
+            1200,
             1300,
             1450,
             1550,
             1650,
             1720,
         ]  # in nanometers, 20nm FWHM
-        self.baudrate = 9600
+        self.baudrate = 115200
         self.baseline = None
         self.serial = None
 
         ## To keep track
         # used for also plotting previouse values
-        self.old_data = deque(maxlen=3)
+        self.old_data = deque(maxlen=4)
         # to keep track of the amount of calibrations done
         self.calibration_counter = 0
         # holds labers for each row
@@ -354,17 +363,32 @@ class PsPlot(QMainWindow):
         self.table.scrollToBottom()
 
     def getMeasurement(self) -> List[float]:
-        if self.serial is not None:
-            # send serial command
+        if self.serial is not None:   
+            # send serial command for ir
             self.serial.write(b"scan\n")
-
+            time.sleep(.1)
             # read response
             line = self.serial.readline()
             line = line.decode()
-
             # parse data
             data = line.strip("> ").strip("\r\n").split("\t")
             data = [float(x) for x in data if x != ""]
+
+
+            # send serial command for visual
+            self.serial.write(b"vis\n")
+            time.sleep(.2)
+            # read response
+            line = self.serial.readline()
+            line = line.decode()
+            # parse data
+            # data from vis is [415,445,480,515,555,clear,nir,590,630,680]
+            datavis = line.strip("> ").strip("\r\n").split("\t")
+            datavis = [float(x) for x in datavis if x != ""]
+            datavis.pop(4)
+            datavis.append(datavis.pop(4))        
+            data = datavis+data
+
         else:
             # dummy data with random noise
             data = data = [
@@ -376,10 +400,21 @@ class PsPlot(QMainWindow):
                 0.2281,
                 0.2298,
                 0.2264,
+                0.2254,
+                0.2278,
+                0.2264,
+                0.2178,
+                0.2379,
+                0.2276,
+                0.2281,
+                0.2298,
+                0.2264,
             ]
             data = [x + random.uniform(0.0015, 0.0080) for x in data]
-
+        #print(data)
         return data
+
+
 
     def calibrate(self) -> None:
         button = QMessageBox.question(
@@ -436,7 +471,7 @@ class PsPlot(QMainWindow):
         markC = tuple(
             self.pw.palette().color(QPalette.ColorRole.Highlight).getRgb()[:-1]
         )
-        pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="o", width=2)
+        pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="w", width=2)
         if data is not None:
             pc = self.pw.plot(self.wavelengths, data, pen=pen)
             pc.setSymbol("o")
@@ -445,7 +480,6 @@ class PsPlot(QMainWindow):
             self.restoreAxisPlot()
         if self.axisAutoRangeChbx.isChecked():
             self.centerAxisPlot()
-
 
 if __name__ == "__main__":
     print(f"App is running on QT version {QT_VERSION_STR}")
