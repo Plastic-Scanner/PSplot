@@ -29,6 +29,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
+
 import pyqtgraph as pg
 import random
 import serial
@@ -176,6 +177,10 @@ class PsPlot(QMainWindow):
 
         ## Buttons
         # center, auto-restoreAxis and clear
+        
+        self.loadDatasetBtn = QPushButton("Load dataset")
+        self.loadDatasetBtn.clicked.connect(self.loadDataset)
+
         self.axisRestoreBtn = QPushButton("Restore axis")
         self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
 
@@ -192,6 +197,7 @@ class PsPlot(QMainWindow):
         self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
 
         self.horizontalBtnLayout = QHBoxLayout()
+        self.horizontalBtnLayout.addWidget(self.loadDatasetBtn)
         self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
         self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
         self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
@@ -489,10 +495,33 @@ class PsPlot(QMainWindow):
             self.restoreAxisPlot()
         if self.axisAutoRangeChbx.isChecked():
             self.centerAxisPlot()
+    def loadDataset(self):
+        #the goal here is to load a dataset to visualize in the 3D scatterplot
+        # import the dataframe
+        df_raw = pd.read_csv("https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv")
+        # calculate the mean of the last 8 columns of the "spec" readings
+        spec_df = df_raw.query("ID == 'spectralon'")
+        spectralon_wavelengths = spec_df.iloc[:, -8:].mean()
+        #preprocess known dataset
+        def apply_snv_transform(row):
+            specific_wavelengths = row[-8:]
+            return self.snv_transform(specific_wavelengths, spectralon_wavelengths)
+
+        # Apply the function to each row of the dataframe
+        df_raw.iloc[:, -8:] = df_raw.iloc[:, -8:].apply(apply_snv_transform, axis=1)
+        #print(df_raw)
+        types_to_train = ["PET", "HDPE", "PP","PS"]
+        df_train = df_raw[df_raw.PlasticType.isin(types_to_train)]
+
+        for sample in df_train.index:
+            self.axes.scatter(df_train["nm1050"],df_train["nm1450"],df_train["nm1650"], c=df_train["Reading"])        
     def threeD(self, data: Optional[List[float]] = None) -> None:
-                print(data,self.baseline)
+                #print(data,self.baseline)
+                
+                data = np.array(data)
+                self.baseline = np.array(self.baseline)
                 corrected = self.snv_transform(data,self.baseline)
-                self.axes.scatter(corrected[0],corrected[1],corrected[2])
+                self.axes.scatter(corrected[1],corrected[3],corrected[5], c= "red")
 
     def snv_transform(self,input_wavelengths, spectralon_wavelengths):
         # Divide specific wavelengths by reference wavelengths
