@@ -96,7 +96,7 @@ class PsPlot(QMainWindow):
         self.baudrate = 9600
         self.baseline = None
         self.serial = None
-
+        self.datasetloaded = None
         ## To keep track
         # used for also plotting previouse values
         self.old_data = deque(maxlen=3)
@@ -140,7 +140,7 @@ class PsPlot(QMainWindow):
         self.xPadding = min(self.wavelengths) * 0.1
         self.yPadding = 0.015
         self.yMin = 0
-        self.yMax = 0.35
+        self.yMax = 1.1
         self.pi.setLimits(
             xMin=min(self.wavelengths) - self.xPadding,
             xMax=max(self.wavelengths) + self.xPadding,
@@ -158,10 +158,9 @@ class PsPlot(QMainWindow):
         self.fig = Figure()
         self.threeDplot = FigureCanvas(self.fig)
         self.axes = self.fig.add_subplot(111, projection='3d')
-        self.axes.set_xlabel('X Label')
-        self.axes.set_ylabel('Y Label')
-        self.axes.set_zlabel('Z Label')
-        #self.axes.scatter(1,1,1)
+        self.axes.set_xlabel('1050nm')
+        self.axes.set_ylabel('1450nm')
+        self.axes.set_zlabel('1650nm')
 
         # graph horizonal layout
         self.horizontalGraphLayout = QHBoxLayout()
@@ -178,8 +177,8 @@ class PsPlot(QMainWindow):
         ## Buttons
         # center, auto-restoreAxis and clear
         
-        self.loadDatasetBtn = QPushButton("Load dataset")
-        self.loadDatasetBtn.clicked.connect(self.loadDataset)
+        self.loadDatasetChbx = QCheckBox("Load dataset")
+        #self.loadDatasetChbx.clicked.connect(self.loadDatasetChbxClick)
 
         self.axisRestoreBtn = QPushButton("Restore axis")
         self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
@@ -197,7 +196,7 @@ class PsPlot(QMainWindow):
         self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
 
         self.horizontalBtnLayout = QHBoxLayout()
-        self.horizontalBtnLayout.addWidget(self.loadDatasetBtn)
+        self.horizontalBtnLayout.addWidget(self.loadDatasetChbx)
         self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
         self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
         self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
@@ -301,6 +300,7 @@ class PsPlot(QMainWindow):
     def clearGraph(self) -> None:
         self.old_data.clear()
         self.pw.clear()
+        self.axes.cla()        
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
         if e.key() == Qt.Key.Key_Escape or e.key() == Qt.Key.Key_Q:
@@ -393,7 +393,7 @@ class PsPlot(QMainWindow):
             # parse data
             data = line.strip("> ").strip("\r\n").split("\t")
             data = [float(x) for x in data if x != ""]
-            print(data)
+            #print(data)
         else:
             # dummy data with random noise
             data = data = [
@@ -469,14 +469,18 @@ class PsPlot(QMainWindow):
 
     def plot(self, data: Optional[List[float]] = None) -> None:
         self.pw.clear()
+        self.baseline = np.array(self.baseline)
 
         # add the baseline of the last calibration
         if self.baseline is not None:
-            pc = self.pw.plot(self.wavelengths, self.baseline, pen=(255, 0, 0))
+            normalizedbasline = self.baseline/self.baseline
+            pc = self.pw.plot(self.wavelengths, normalizedbasline, pen=(255, 0, 0))
 
         for dat in self.old_data:
+            dat = np.array(dat)
+            normalizedolddat = dat/self.baseline
             pc = self.pw.plot(
-                self.wavelengths, dat, pen=(0, 100, 0), symbolBrush=(0, 255, 0)
+                self.wavelengths, normalizedolddat, pen=(0, 100, 0), symbolBrush=(0, 255, 0)
             )
             pc.setSymbol("x")
 
@@ -488,7 +492,9 @@ class PsPlot(QMainWindow):
         )
         pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="o", width=2)
         if data is not None:
-            pc = self.pw.plot(self.wavelengths, data, pen=pen)
+            data = np.array(data)
+            normalizeddata = data/self.baseline
+            pc = self.pw.plot(self.wavelengths, normalizeddata, pen=pen)
             pc.setSymbol("o")
 
         if self.axisAutoRestoreChbx.isChecked():
@@ -509,19 +515,28 @@ class PsPlot(QMainWindow):
 
         # Apply the function to each row of the dataframe
         df_raw.iloc[:, -8:] = df_raw.iloc[:, -8:].apply(apply_snv_transform, axis=1)
-        #print(df_raw)
-        types_to_train = ["PET", "HDPE", "PP","PS"]
-        df_train = df_raw[df_raw.PlasticType.isin(types_to_train)]
+        df_raw["PlasticNumber"] = df_raw["PlasticType"].map({"PET": 1,"HDPE": 2,"PVC": 3,"LDPE": 4,"PP": 5,"PS": 6,"other": 7})
+        #print(df_raw["PlasticNumber"])
 
-        for sample in df_train.index:
-            self.axes.scatter(df_train["nm1050"],df_train["nm1450"],df_train["nm1650"], c=df_train["Reading"])        
+        types_to_train = ["PET", "HDPE", "PP","PS"]
+        self.df_train = df_raw[df_raw.PlasticType.isin(types_to_train)]
+        
+        self.datasetloaded = True
+
+    def showDataset(self):
+        if self.datasetloaded is None:
+            self.loadDataset()
+        for sample in self.df_train.index:
+            self.axes.scatter(self.df_train["nm1050"],self.df_train["nm1450"],self.df_train["nm1650"], c=self.df_train["PlasticNumber"])        
     def threeD(self, data: Optional[List[float]] = None) -> None:
-                #print(data,self.baseline)
-                
-                data = np.array(data)
-                self.baseline = np.array(self.baseline)
-                corrected = self.snv_transform(data,self.baseline)
-                self.axes.scatter(corrected[1],corrected[3],corrected[5], c= "red")
+        if self.loadDatasetChbx.isChecked():
+            self.axes.cla()
+            self.showDataset()
+        data = np.array(data)
+        self.baseline = np.array(self.baseline)
+        corrected = self.snv_transform(data,self.baseline)
+        #print(corrected)
+        self.axes.scatter(corrected[1],corrected[4],corrected[6], c= "red")
 
     def snv_transform(self,input_wavelengths, spectralon_wavelengths):
         # Divide specific wavelengths by reference wavelengths
