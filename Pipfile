@@ -8,10 +8,10 @@ ipython = "*"
 numpy = "*"
 python-language-server = "*"
 pyserial = "*"
-PyQt6 = "*"
+pyqt6 = "*"
 pyqtgraph = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.10"
+python_version = "3.8"
