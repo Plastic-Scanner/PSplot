@@ -3,7 +3,7 @@ import csv
 from collections import deque
 import numpy as np
 from PyQt6.QtCore import Qt, pyqtSignal, QT_VERSION_STR
-from PyQt6.QtGui import QKeySequence, QKeyEvent, QColor, QPalette
+from PyQt6.QtGui import QKeySequence, QKeyEvent, QColor, QPalette, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -74,6 +74,7 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.setWindowIcon(QIcon('logo3-01.png'))
 
         # HARDCODED SETTINGS
         self.wavelengths = [
