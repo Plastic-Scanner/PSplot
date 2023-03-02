@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
-from PyQt6.QtCore import Qt, pyqtSignal, QT_VERSION_STR
-from PyQt6.QtGui import QKeySequence, QKeyEvent, QColor, QPalette
-from PyQt6.QtWidgets import (
+from threading import currentThread
+from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
+from PyQt5.QtGui import QKeySequence, QKeyEvent, QColor, QPalette, QVector3D
+from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
     QCheckBox,
@@ -22,6 +23,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt5.QtDataVisualization import (Q3DCamera, Q3DTheme, Q3DScatter,
+        QAbstract3DGraph, QAbstract3DSeries, QScatter3DSeries,
+        QScatterDataItem, QScatterDataProxy)
 import csv
 from collections import deque
 import numpy as np
@@ -36,7 +40,7 @@ import serial
 import serial.tools.list_ports
 import sys
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict
 
 
 class ComboBox(QComboBox):
@@ -81,6 +85,7 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.ctr = 0
 
         # HARDCODED SETTINGS
         self.wavelengths = [
@@ -155,17 +160,47 @@ class PsPlot(QMainWindow):
         self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         # add 3d plot
-        self.fig = Figure()
-        self.threeDplot = FigureCanvas(self.fig)
-        self.axes = self.fig.add_subplot(111, projection='3d')
-        self.axes.set_xlabel('1050nm')
-        self.axes.set_ylabel('1450nm')
-        self.axes.set_zlabel('1650nm')
+        self.threeDdata: Dict[Tuple[int], list[QScatterDataItem]] = dict()
+        self.threeDdata_colors = []
+        self.threeDgraph = Q3DScatter()
+        self.threeDgraph_container = QWidget.createWindowContainer(self.threeDgraph)
+        self.threeDgraph.axisX().setTitle('1050nm')
+        self.threeDgraph.axisY().setTitle('1450')
+        self.threeDgraph.axisZ().setTitle('1650nm')
+
+        # styling
+        #  self.threeDgraph.activeTheme().setLabelBackgroundEnabled(
+        #          not self.threeDgraph.activeTheme().isLabelBackgroundEnabled())
+        self.threeDgraph.setShadowQuality(QAbstract3DGraph.ShadowQuality(0))
+        currentTheme = self.threeDgraph.activeTheme()
+        currentTheme.setType(Q3DTheme.Theme(0))
+        currentTheme.setBackgroundEnabled(True)
+        currentTheme.setLabelBackgroundEnabled(True)
+        currentTheme.setAmbientLightStrength(0.6)
+        currentTheme.setGridEnabled(True)
+
+        # holds all of the scatterdataseries
+        self.scatter_proxy = QScatterDataProxy()
+        self.scatter_proxy2 = QScatterDataProxy()
+
+        #  series = QScatter3DSeries(self.scatter_proxy)
+        #  #  series.setItemLabelFormat(
+        #  #          "@xTitle: @xLabel | @yTitle: @yLabel | @zTitle: @zLabel")
+        #  series.setItemLabelFormat("@xLabel | @yLabel | @zLabel")
+        #  series.setMeshSmooth(True)
+        #  series.setBaseColor(QColor(0,255,255))
+
+
+        #  self.threeDgraph.addSeries(series)
+        #  self.data = [QScatterDataItem(QVector3D(i,i,i)) for i in range(10)]
+        #
+        #  self.threeDgraph.seriesList()[0].dataProxy().resetArray(self.data)
 
         # graph horizonal layout
         self.horizontalGraphLayout = QHBoxLayout()
-        self.horizontalGraphLayout.addWidget(self.pw)
-        self.horizontalGraphLayout.addWidget(self.threeDplot)
+        self.horizontalGraphLayout.setSpacing(10)
+        self.horizontalGraphLayout.addWidget(self.pw, 50)
+        self.horizontalGraphLayout.addWidget(self.threeDgraph_container, 50)
 
         ## Table output
         self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
@@ -176,7 +211,6 @@ class PsPlot(QMainWindow):
 
         ## Buttons
         # center, auto-restoreAxis and clear
-        
         self.loadDatasetChbx = QCheckBox("Load dataset")
         #self.loadDatasetChbx.clicked.connect(self.loadDatasetChbxClick)
 
@@ -212,6 +246,7 @@ class PsPlot(QMainWindow):
 
         # add all layouts
         self.layout = QVBoxLayout()
+        self.layout.setSpacing(10)
         self.layout.addLayout(self.horizontalSerialLayout)
         self.layout.addLayout(self.horizontalGraphLayout)
         self.layout.addLayout(self.horizontalBtnLayout)
@@ -221,7 +256,7 @@ class PsPlot(QMainWindow):
         self.layout.setContentsMargins(30, 60, 60, 30)
         self.widget.setLayout(self.layout)
 
-        self.setWindowTitle("My plotter")
+        self.setWindowTitle("PSPlot")
         self.resize(1000, 600)
         self.setMinimumSize(600, 350)
         self.center()
@@ -334,7 +369,7 @@ class PsPlot(QMainWindow):
             data = self.getMeasurement()
             self.addMeasurement(data)
             self.plot(data)
-            self.threeD(data)
+            self.threeD([data[1],data[4],data[6]])
 
     def addCalibrationMeasurement(self, data: List[float]) -> None:
         self.addToTable(data, True)
@@ -528,15 +563,48 @@ class PsPlot(QMainWindow):
             self.loadDataset()
         for sample in self.df_train.index:
             self.axes.scatter(self.df_train["nm1050"],self.df_train["nm1450"],self.df_train["nm1650"], c=self.df_train["PlasticNumber"])        
-    def threeD(self, data: Optional[List[float]] = None) -> None:
-        if self.loadDatasetChbx.isChecked():
-            self.axes.cla()
-            self.showDataset()
-        data = np.array(data)
-        self.baseline = np.array(self.baseline)
-        corrected = self.snv_transform(data,self.baseline)
-        #print(corrected)
-        self.axes.scatter(corrected[1],corrected[4],corrected[6], c= "red")
+
+    def threeD(self, data: Optional[List[float]] = None, color: Optional[Tuple[int]] = (125,125,125)) -> None:
+        if len(color) != 3 or len(data) != 3:
+            raise ValueError("argument may only contain 3 items")
+        self.ctr+=1
+        print(self.ctr, self.ctr%2)
+        color = [(255,0,0),(0,255,0)][self.ctr%2]
+        print(f"{color=}")
+
+        if color not in self.threeDdata:
+            self.threeDdata[color] = []
+            # the list just exists to make sure that the colors maintain their order
+            self.threeDdata_colors.append(color)
+            # add a series and make it the correct color
+            if self.ctr%2:
+                series = QScatter3DSeries(self.scatter_proxy)
+            else:
+                series = QScatter3DSeries(self.scatter_proxy2)
+            series.setItemLabelFormat("@xLabel | @yLabel | @zLabel")
+            series.setMeshSmooth(True)
+            series.setBaseColor(QColor(*color))
+            self.threeDgraph.addSeries(series)
+        
+        self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
+
+        #  self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
+
+        for idx, currcolor in enumerate(self.threeDdata_colors):
+            print(f"{currcolor=}")
+            self.threeDgraph.seriesList()[idx].dataProxy().resetArray(self.threeDdata[currcolor])
+
+            #  self.threeDgraph.seriesList()[0].dataProxy().resetArray(self.threeDdata[currcolor])
+
+        #  if self.loadDatasetChbx.isChecked():
+        #      self.axes.cla()
+        #      self.showDataset()
+
+        #  data = np.array(data)
+        #  self.baseline = np.array(self.baseline)
+        #  corrected = self.snv_transform(data,self.baseline)
+        #  print("hier")
+        #  self.axes.scatter(corrected[1],corrected[4],corrected[6], c= "red")
 
     def snv_transform(self,input_wavelengths, spectralon_wavelengths):
         # Divide specific wavelengths by reference wavelengths
