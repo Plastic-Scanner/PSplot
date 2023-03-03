@@ -167,6 +167,8 @@ class PsPlot(QMainWindow):
         self.threeDgraph.axisX().setTitle('1050nm')
         self.threeDgraph.axisY().setTitle('1450')
         self.threeDgraph.axisZ().setTitle('1650nm')
+        self.threeDgraph.setMeasureFps(True)
+        self.threeDgraph.setOrthoProjection(True)
 
         # styling
         #  self.threeDgraph.activeTheme().setLabelBackgroundEnabled(
