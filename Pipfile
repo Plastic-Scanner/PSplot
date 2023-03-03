@@ -8,8 +8,11 @@ ipython = "*"
 numpy = "*"
 python-language-server = "*"
 pyserial = "*"
-pyqt6 = "*"
+pyqt5 = "*"
 pyqtgraph = "*"
+PyQtDataVisualization = "*"
+matplotlib = "*"
+pandas = "*"
 
 [dev-packages]
 

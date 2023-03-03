@@ -9,9 +9,11 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QDockWidget,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMainWindow,
     QMessageBox,
@@ -30,11 +32,10 @@ import csv
 from collections import deque
 import numpy as np
 import pandas as pd
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-
+# pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
+import os
 import random
 import serial
 import serial.tools.list_ports
@@ -109,11 +110,14 @@ class PsPlot(QMainWindow):
         self.calibration_counter = 0
         # holds labers for each row
         self.row_labels = []
+        # holds all of the names for all of the samples
+        self.sample_labels = set()
 
         # Widgets
         self.widget = QWidget()  # Container widget
 
-        ## Serial selection
+        ## input output (selecting serial and saving)
+        # selecting serial
         self.serialList = ComboBox()
         self.serialList.onPopup.connect(self.serialScan)
         self.serialList.activated.connect(self.serialConnect)
@@ -125,10 +129,68 @@ class PsPlot(QMainWindow):
         # serial notification
         self.serialNotif = QLabel()
 
+        # loading and saving
+        self.loadDatasetBtn = QPushButton("Load dataset from file")
+
+        # export and calibrate
+        self.exportBtn = QPushButton("Export dataset to file")
+        self.exportBtn.clicked.connect(self.exportCsv)
+
         # serial horizonal layout
         self.horizontalSerialLayout = QHBoxLayout()
         self.horizontalSerialLayout.addWidget(self.serialList)
         self.horizontalSerialLayout.addWidget(self.serialNotif)
+
+        # load and save horizontal layout
+        self.horizontalLoadSaveLayout = QHBoxLayout()
+        self.horizontalLoadSaveLayout.addWidget(self.loadDatasetBtn)
+        self.horizontalLoadSaveLayout.addWidget(self.exportBtn)
+
+
+        self.inoutBoxLayout = QVBoxLayout()
+        self.inoutBoxLayout.addLayout(self.horizontalSerialLayout)
+        self.inoutBoxLayout.addLayout(self.horizontalLoadSaveLayout)
+        self.inoutBox = QGroupBox("data in/out")
+        self.inoutBox.setLayout(self.inoutBoxLayout)
+
+        ## taking a measurement
+        # calibration
+        self.calibrateBtn = QPushButton("Calibrate with spectralon")
+        self.calibrateBtn.clicked.connect(self.calibrate)
+
+        self.clearCalibrationBtn = QPushButton("Clear Calibration")
+        self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
+        self.clearCalibrationBtn.setDisabled(True)
+
+        self.regularMeasurementBtn = QPushButton("Take measurement\n(shortcut: spacebar)")
+        self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
+
+        self.sampleNameInput = QLineEdit()
+        self.sampleNameInput.setPlaceholderText("sample name")
+        self.sampleNameInput.setClearButtonEnabled(True)
+        self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
+
+        self.sampleNameSelection = QComboBox()
+        self.sampleNameSelection.setDuplicatesEnabled(False)
+        self.sampleNameSelection.currentTextChanged.connect(self.sampleNameSelectionChanged)
+        #  self.sampleNameSelection.setPlaceholderText("select sample name")
+
+        self.calibrationLayout = QHBoxLayout()
+        self.calibrationLayout.addWidget(self.calibrateBtn)
+        self.calibrationLayout.addWidget(self.clearCalibrationBtn)
+
+        self.sampleNameLayout = QHBoxLayout()
+        self.sampleNameLayout.addWidget(self.sampleNameInput, 50)
+        self.sampleNameLayout.addWidget(self.sampleNameSelection, 50)
+
+        self.measureBoxLayout = QVBoxLayout()
+        self.measureBoxLayout.addLayout(self.calibrationLayout)
+        self.measureBoxLayout.addLayout(self.sampleNameLayout)
+        self.measureBoxLayout.addWidget(self.regularMeasurementBtn)
+
+        self.measureBox = QGroupBox("measuring")
+        self.measureBox.setLayout(self.measureBoxLayout)
+
 
         ## Plot
         self.pw = pg.PlotWidget(background=None)
@@ -171,8 +233,6 @@ class PsPlot(QMainWindow):
         self.threeDgraph.setOrthoProjection(True)
 
         # styling
-        #  self.threeDgraph.activeTheme().setLabelBackgroundEnabled(
-        #          not self.threeDgraph.activeTheme().isLabelBackgroundEnabled())
         self.threeDgraph.setShadowQuality(QAbstract3DGraph.ShadowQuality(0))
         currentTheme = self.threeDgraph.activeTheme()
         currentTheme.setType(Q3DTheme.Theme(0))
@@ -210,11 +270,10 @@ class PsPlot(QMainWindow):
         self.table.setColumnCount(len(self.tableHeader))
         self.table.setHorizontalHeaderLabels(self.tableHeader)
         self.table.setColumnWidth(0, 200)
+        self.table.itemChanged.connect(self.tableChanged)
 
         ## Buttons
         # center, auto-restoreAxis and clear
-        self.loadDatasetChbx = QCheckBox("Load dataset")
-        #self.loadDatasetChbx.clicked.connect(self.loadDatasetChbxClick)
 
         self.axisRestoreBtn = QPushButton("Restore axis")
         self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
@@ -228,34 +287,26 @@ class PsPlot(QMainWindow):
         self.clearPlotBtn = QPushButton("Clear graph")
         self.clearPlotBtn.clicked.connect(self.clearGraph)
 
-        self.clearCalibrationBtn = QPushButton("Clear Calibration")
-        self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
 
         self.horizontalBtnLayout = QHBoxLayout()
-        self.horizontalBtnLayout.addWidget(self.loadDatasetChbx)
+        #  self.horizontalBtnLayout.addWidget(self.loadDatasetChbx)
         self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
         self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
         self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
         self.horizontalBtnLayout.addWidget(self.clearPlotBtn)
-        self.horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
-
-        # export and calibrate
-        self.exportBtn = QPushButton("Export CSV")
-        self.exportBtn.clicked.connect(self.exportCsv)
-
-        self.calibrateBtn = QPushButton("Calibrate with spectralon")
-        self.calibrateBtn.clicked.connect(self.calibrate)
+        #  self.horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
 
         # add all layouts
         self.layout = QVBoxLayout()
         self.layout.setSpacing(10)
-        self.layout.addLayout(self.horizontalSerialLayout)
+        self.layout.addWidget(self.inoutBox)
+        self.layout.addWidget(self.measureBox)
         self.layout.addLayout(self.horizontalGraphLayout)
         self.layout.addLayout(self.horizontalBtnLayout)
         self.layout.addWidget(self.table)
-        self.layout.addWidget(self.exportBtn)
-        self.layout.addWidget(self.calibrateBtn)
-        self.layout.setContentsMargins(30, 60, 60, 30)
+        #  self.layout.addWidget(self.exportBtn)
+        #  self.layout.addWidget(self.calibrateBtn)
+        #  self.layout.setContentsMargins(30, 60, 60, 30)
         self.widget.setLayout(self.layout)
 
         self.setWindowTitle("PSPlot")
@@ -368,32 +419,42 @@ class PsPlot(QMainWindow):
             self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         elif e.key() == Qt.Key.Key_Space:
-            data = self.getMeasurement()
-            self.addMeasurement(data)
-            self.plot(data)
-            self.threeD([data[1],data[4],data[6]])
+            self.takeRegularMeasurement()
+
+    def takeRegularMeasurement(self):
+        data = self.getMeasurement()
+        self.addMeasurement(data)
+        self.plot(data)
+        self.threeD([data[1],data[4],data[6]])
 
     def addCalibrationMeasurement(self, data: List[float]) -> None:
         self.addToTable(data, True)
 
     def addMeasurement(self, data: List[float]) -> None:
+
+        name = self.sampleNameInput.text()
+        if name not in self.sample_labels:
+            self.sample_labels.add(name)
+            self.sampleNameSelection.addItem(name)
+        self.sampleNameSelection.setCurrentText(name)
+
         # use calibration if possible
         if self.baseline is not None:
             dataCalibrated = [dat / base for dat, base in zip(data, self.baseline)]
             #  data = dataCalibrated
 
-        self.addToTable(data)
+        self.addToTable(data, name)
 
         self.old_data.append(data)
 
     def addToTable(
-        self, data: List[float], calibrated_measurement: bool = False
+        self, data: List[float], name: str = "", calibrated_measurement: bool = False
     ) -> None:
         # add row
         nRows = self.table.rowCount()
         self.table.setRowCount(nRows + 1)
         self.table.setItem(
-            nRows, 0, QTableWidgetItem("")
+            nRows, 0, QTableWidgetItem(name)
         )  # sample name (user-editable, empty by default)
         if calibrated_measurement:
             self.row_labels.append(f"c {self.calibration_counter}")
@@ -469,10 +530,12 @@ class PsPlot(QMainWindow):
         return data
 
     def calibrate(self) -> None:
+
         button = QMessageBox.question(
             self, "Calibration", "Is the spectralon sample on the sensor?"
         )
         if button == QMessageBox.StandardButton.Yes:
+            self.clearCalibrationBtn.setEnabled(True)
             self.baseline = self.getMeasurement()
             self.calibration_counter += 1
             self.addCalibrationMeasurement(self.baseline)
@@ -503,6 +566,18 @@ class PsPlot(QMainWindow):
                         val = ""
                     row.append(val)
                 writer.writerow(row)
+
+    def tableChanged(self, item):
+        # if it was a label that changed, add it to the list of labels
+        if item.column() == 0:
+            name = item.text()
+            if name not in self.sample_labels:
+                self.sample_labels.add(name)
+                self.sampleNameSelection.addItem(name)
+
+    def sampleNameSelectionChanged(self, sample_name):
+        self.sampleNameInput.setText(sample_name)
+
 
     def plot(self, data: Optional[List[float]] = None) -> None:
         self.pw.clear()
@@ -538,6 +613,7 @@ class PsPlot(QMainWindow):
             self.restoreAxisPlot()
         if self.axisAutoRangeChbx.isChecked():
             self.centerAxisPlot()
+
     def loadDataset(self):
         #the goal here is to load a dataset to visualize in the 3D scatterplot
         # import the dataframe
@@ -570,9 +646,7 @@ class PsPlot(QMainWindow):
         if len(color) != 3 or len(data) != 3:
             raise ValueError("argument may only contain 3 items")
         self.ctr+=1
-        print(self.ctr, self.ctr%2)
         color = [(255,0,0),(0,255,0)][self.ctr%2]
-        print(f"{color=}")
 
         if color not in self.threeDdata:
             self.threeDdata[color] = []
@@ -593,7 +667,7 @@ class PsPlot(QMainWindow):
         #  self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
 
         for idx, currcolor in enumerate(self.threeDdata_colors):
-            print(f"{currcolor=}")
+            #  print(f"{currcolor=}")
             self.threeDgraph.seriesList()[idx].dataProxy().resetArray(self.threeDdata[currcolor])
 
             #  self.threeDgraph.seriesList()[0].dataProxy().resetArray(self.threeDdata[currcolor])
@@ -622,9 +696,18 @@ class PsPlot(QMainWindow):
 
 if __name__ == "__main__":
     print(f"App is running on QT version {QT_VERSION_STR}")
+    app = pg.mkQApp()
+
     # this should add some optimisations for high-DPI screens
     # https://pyqtgraph.readthedocs.io/en/latest/how_to_use.html#hidpi-displays
-    app = pg.mkQApp()
+    QT_version = float(''.join(QT_VERSION_STR.split('.')[:2]))
+    if QT_version >= 5.14 and QT_version < 6:
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+        app.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    elif QT_version>=5.14 and QT_version < 5.14:
+        app.setAttribute(Qt.AA_EnableHighDpiScaling)
+        app.setAttribute(Qt.AA_UseHighDpiPixmaps)
+
     window = PsPlot()
     window.show()
     app.exec()
