@@ -278,6 +278,9 @@ class PsPlot(QMainWindow):
         self.axisRestoreBtn = QPushButton("Restore axis")
         self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
 
+        self.axisCenterBtn = QPushButton("Center axis")
+        self.axisCenterBtn.clicked.connect(self.centerAxisPlot)
+
         self.axisAutoRestoreChbx = QCheckBox("auto-restore axis")
         self.axisAutoRestoreChbx.clicked.connect(self.restoreAxisPlotChbxClick)
 
@@ -291,6 +294,7 @@ class PsPlot(QMainWindow):
         self.horizontalBtnLayout = QHBoxLayout()
         #  self.horizontalBtnLayout.addWidget(self.loadDatasetChbx)
         self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
+        self.horizontalBtnLayout.addWidget(self.axisCenterBtn)
         self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
         self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
         self.horizontalBtnLayout.addWidget(self.clearPlotBtn)
