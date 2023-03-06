@@ -5,11 +5,13 @@ from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
 from PyQt5.QtGui import QKeySequence, QKeyEvent, QColor, QPalette, QVector3D
 from PyQt5.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QComboBox,
     QCompleter,
     QCheckBox,
     QDockWidget,
     QFileDialog,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -19,6 +21,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -96,6 +99,7 @@ class PsPlot(QMainWindow):
         super().__init__()
         self.ctr = 0
         self.prevent_loop = False
+        self.overwrite_no_callibration_warning = False
 
         self.dataset_url = "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
 
@@ -114,6 +118,17 @@ class PsPlot(QMainWindow):
         self.baseline = None
         self.serial = None
         self.datasetloaded = None
+        self.sample_materials = {
+            "PP",
+            "PET",
+            "PS",
+            "HDPE",
+            "LDPE",
+            "PVC",
+            "spectralon",
+            "unknown",
+        }
+
         ## To keep track
         # used for also plotting previouse values
         self.old_data = deque(maxlen=3)
@@ -123,9 +138,6 @@ class PsPlot(QMainWindow):
         self.row_labels = []
         # holds all of the names for all of the samples
         self.sample_labels = set()
-
-        # Widgets
-        self.widget = QWidget()  # Container widget
 
         ## input output (selecting serial and saving)
         # selecting serial
@@ -148,8 +160,8 @@ class PsPlot(QMainWindow):
         self.loadDatasetOnlineBtn.clicked.connect(self.loadDatasetOnline)
 
         # export and calibrate
-        self.exportBtn = QPushButton("Export dataset to file")
-        self.exportBtn.clicked.connect(self.exportCsv)
+        self.exportDataBtn = QPushButton("Export dataset to file")
+        self.exportDataBtn.clicked.connect(self.exportCsv)
 
         # serial horizonal layout
         self.horizontalSerialLayout = QHBoxLayout()
@@ -160,7 +172,7 @@ class PsPlot(QMainWindow):
         self.horizontalLoadSaveLayout = QHBoxLayout()
         self.horizontalLoadSaveLayout.addWidget(self.loadDatasetOnlineBtn)
         self.horizontalLoadSaveLayout.addWidget(self.loadDatasetLocalBtn)
-        self.horizontalLoadSaveLayout.addWidget(self.exportBtn)
+        self.horizontalLoadSaveLayout.addWidget(self.exportDataBtn)
 
         self.inoutBoxLayout = QVBoxLayout()
         self.inoutBoxLayout.addLayout(self.horizontalSerialLayout)
@@ -185,9 +197,12 @@ class PsPlot(QMainWindow):
             "a calibration measurement needs to be taken first"
         )
         self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
-        self.regularMeasurementBtn.setDisabled(True)
+        # comment out the next line in case you only want to allow measurements after a calibration
+        # self.regularMeasurementBtn.setDisabled(True)
 
-        self.serialNotif = QLabel()
+        self.sampleNameInfoLabel = QLabel()
+        self.sampleNameInfoLabel.setText("Sample name:")
+
         self.sampleNameSelection = QComboBox()
         self.sampleNameSelection.setDuplicatesEnabled(False)
         self.sampleNameSelection.setEditable(True)
@@ -196,51 +211,109 @@ class PsPlot(QMainWindow):
         )
         self.sampleNameSelection.setPlaceholderText("select sample name")
 
+        self.sampleMaterialInfoLabel = QLabel()
+        self.sampleMaterialInfoLabel.setText("Sample material:")
+
+        self.sampleMaterialSelection = QComboBox()
+        self.sampleMaterialSelection.setDuplicatesEnabled(False)
+        self.sampleMaterialSelection.setEditable(True)
+        self.sampleMaterialSelection.currentIndexChanged.connect(
+            self.sampleMaterialSelectionChanged
+        )
+        self.sampleMaterialSelection.setPlaceholderText("select material")
+        self.sampleMaterialSelection.addItems(sorted(list(self.sample_materials)))
+        self.sampleMaterialSelection.setCurrentText("unknown")
+
         self.calibrationLayout = QHBoxLayout()
         self.calibrationLayout.addWidget(self.calibrateBtn)
         self.calibrationLayout.addWidget(self.clearCalibrationBtn)
 
         self.sampleNameLayout = QHBoxLayout()
-        self.sampleNameLayout.addWidget(self.sampleNameSelection)
+        self.sampleNameLayout.addWidget(self.sampleNameInfoLabel, 25)
+        self.sampleNameLayout.addWidget(self.sampleNameSelection, 75)
+
+        self.sampleMaterialLayout = QHBoxLayout()
+        self.sampleMaterialLayout.addWidget(self.sampleMaterialInfoLabel, 25)
+        self.sampleMaterialLayout.addWidget(self.sampleMaterialSelection, 75)
 
         self.measureBoxLayout = QVBoxLayout()
         self.measureBoxLayout.addLayout(self.calibrationLayout)
         self.measureBoxLayout.addLayout(self.sampleNameLayout)
+        self.measureBoxLayout.addLayout(self.sampleMaterialLayout)
         self.measureBoxLayout.addWidget(self.regularMeasurementBtn)
 
         self.measureBox = QGroupBox("measuring")
         self.measureBox.setLayout(self.measureBoxLayout)
 
-        ## Plot
-        self.pw = pg.PlotWidget(background=None)
+        ## 2d Plot
+        self.twoDPlotWidget = pg.PlotWidget(background=None)
 
-        self.pi = self.pw.getPlotItem()
-        self.pi.hideButtons()
-        self.pi.setMenuEnabled(False)
-        self.pi.showGrid(x=True, y=True, alpha=0.5)
-        self.pi.setMouseEnabled(x=False, y=True)
+        self.twoDPlotWidgetItem = self.twoDPlotWidget.getPlotItem()
+        self.twoDPlotWidgetItem.hideButtons()
+        self.twoDPlotWidgetItem.setMenuEnabled(False)
+        self.twoDPlotWidgetItem.showGrid(x=True, y=True, alpha=0.5)
+        self.twoDPlotWidgetItem.setMouseEnabled(x=False, y=True)
 
-        self.pc = self.pw.plot()
+        self.pc = self.twoDPlotWidget.plot()
         self.pc.setSymbol("o")
 
         self.xPadding = min(self.wavelengths) * 0.1
         self.yPadding = 0.015
         self.yMin = 0
         self.yMax = 1.1
-        self.pi.setLimits(
+        self.twoDPlotWidgetItem.setLimits(
             xMin=min(self.wavelengths) - self.xPadding,
             xMax=max(self.wavelengths) + self.xPadding,
             yMin=0 - self.yPadding,
         )
-        self.pi.setLabel("left", "NIR output", units="V", unitPrefix="m")
-        self.pi.setLabel("bottom", "Wavelength (nm)")
-        self.pi.getAxis("bottom").enableAutoSIPrefix(False)
-        self.pi.setTitle("Reflectance")
+        self.twoDPlotWidgetItem.setLabel(
+            "left", "NIR output", units="V", unitPrefix="m"
+        )
+        self.twoDPlotWidgetItem.setLabel("bottom", "Wavelength (nm)")
+        self.twoDPlotWidgetItem.getAxis("bottom").enableAutoSIPrefix(False)
+        self.twoDPlotWidgetItem.setTitle("Reflectance")
 
-        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-        self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
+        self.twoDPlotWidget.setXRange(
+            self.wavelengths[0], self.wavelengths[-1], padding=0.1
+        )
+        self.twoDPlotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
-        # add 3d plot
+        # Buttons for 2d plot
+        # center, auto-restoreAxis and clear
+        self.twoDAxisRestoreBtn = QPushButton("Restore axis")
+        self.twoDAxisRestoreBtn.clicked.connect(self.twoDAxisRestoreBtnFunction)
+
+        self.twoDAxisCenterBtn = QPushButton("Center axis")
+        self.twoDAxisCenterBtn.clicked.connect(self.twoDAxisCenterBtnFunction)
+
+        self.twoDClearPlotBtn = QPushButton("Clear graph")
+        self.twoDClearPlotBtn.clicked.connect(self.clearGraph)
+
+        self.twoDAutoBtnGroup = QButtonGroup()
+        self.twoDAxisAutoRestoreChbx = QRadioButton("auto-restore axis")
+        self.twoDAxisAutoRestoreChbx.clicked.connect(self.restoreAxisPlotChbxClick)
+        self.twoDAutoBtnGroup.addButton(self.twoDAxisAutoRestoreChbx)
+        self.twoDAxisAutoRangeChbx = QRadioButton("auto-center axis")
+        self.twoDAxisAutoRangeChbx.clicked.connect(self.centerAxisPlotChbxClick)
+        self.twoDAutoBtnGroup.addButton(self.twoDAxisAutoRangeChbx)
+
+        self.twoDExportPlotBtn = QPushButton("Export graph")
+        # self.exportPlotBtn.clicked.connect(self.exportGraph)
+
+        self.twoDPlotControlLayout = QGridLayout()
+        self.twoDPlotControlLayout.addWidget(self.twoDAxisRestoreBtn, 0, 0)
+        self.twoDPlotControlLayout.addWidget(self.twoDAxisCenterBtn, 0, 1)
+        self.twoDPlotControlLayout.addWidget(self.twoDClearPlotBtn, 0, 2)
+        self.twoDPlotControlLayout.addWidget(self.twoDAxisAutoRestoreChbx, 1, 0)
+        self.twoDPlotControlLayout.addWidget(self.twoDAxisAutoRangeChbx, 1, 1)
+        self.twoDPlotControlLayout.addWidget(self.twoDExportPlotBtn, 1, 2)
+        self.twoDPlotControlLayout.setSpacing(0)
+
+        self.twoDPlotLayout = QVBoxLayout()
+        self.twoDPlotLayout.addWidget(self.twoDPlotWidget, 80)
+        self.twoDPlotLayout.addLayout(self.twoDPlotControlLayout, 20)
+
+        ## 3d plot
         self.threeDdata: Dict[Tuple[int], list[QScatterDataItem]] = dict()
         self.threeDdata_colors = []
         self.threeDgraph = Q3DScatter()
@@ -262,6 +335,7 @@ class PsPlot(QMainWindow):
 
         # styling
         self.threeDgraph.setShadowQuality(QAbstract3DGraph.ShadowQuality(0))
+
         currentTheme = self.threeDgraph.activeTheme()
         currentTheme.setType(Q3DTheme.Theme(0))
         currentTheme.setBackgroundEnabled(True)
@@ -280,85 +354,47 @@ class PsPlot(QMainWindow):
         self.scatter_proxy = QScatterDataProxy()
         self.scatter_proxy2 = QScatterDataProxy()
 
-        #  series = QScatter3DSeries(self.scatter_proxy)
-        #  #  series.setItemLabelFormat(
-        #  #          "@xTitle: @xLabel | @yTitle: @yLabel | @zTitle: @zLabel")
-        #  series.setItemLabelFormat("@xLabel | @yLabel | @zLabel")
-        #  series.setMeshSmooth(True)
-        #  series.setBaseColor(QColor(0,255,255))
+        # layout for graphs
+        self.graphLayout = QHBoxLayout()
+        self.graphLayout.setSpacing(10)
+        self.graphLayout.addLayout(self.twoDPlotLayout, 50)
+        self.graphLayout.addWidget(self.threeDgraph_container, 50)
 
-        #  self.threeDgraph.addSeries(series)
-        #  self.data = [QScatterDataItem(QVector3D(i,i,i)) for i in range(10)]
-        #
-        #  self.threeDgraph.seriesList()[0].dataProxy().resetArray(self.data)
-
-        # graph horizonal layout
-        self.horizontalGraphLayout = QHBoxLayout()
-        self.horizontalGraphLayout.setSpacing(10)
-        self.horizontalGraphLayout.addWidget(self.pw, 50)
-        self.horizontalGraphLayout.addWidget(self.threeDgraph_container, 50)
-
-        ## Table output
-        self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
+        ## Table to display output
+        self.tableHeader = ["name", "material"] + [str(x) for x in self.wavelengths]
         self.table = Table()
         self.table.setColumnCount(len(self.tableHeader))
         self.table.setHorizontalHeaderLabels(self.tableHeader)
-        self.table.setColumnWidth(0, 200)
         self.table.itemChanged.connect(self.tableChanged)
+        # make the first 2 columns extra wide
+        self.table.setColumnWidth(0, 200)
+        self.table.setColumnWidth(1, 200)
 
-        ## Buttons
-        # center, auto-restoreAxis and clear
-
-        self.axisRestoreBtn = QPushButton("Restore axis")
-        self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
-
-        self.axisCenterBtn = QPushButton("Center axis")
-        self.axisCenterBtn.clicked.connect(self.centerAxisPlot)
-
-        self.axisAutoRestoreChbx = QCheckBox("auto-restore axis")
-        self.axisAutoRestoreChbx.clicked.connect(self.restoreAxisPlotChbxClick)
-
-        self.axisAutoRangeChbx = QCheckBox("auto-center axis")
-        self.axisAutoRangeChbx.clicked.connect(self.centerAxisPlotChbxClick)
-
-        self.clearPlotBtn = QPushButton("Clear graph")
-        self.clearPlotBtn.clicked.connect(self.clearGraph)
-
-        self.horizontalBtnLayout = QHBoxLayout()
-        #  self.horizontalBtnLayout.addWidget(self.loadDatasetChbx)
-        self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
-        self.horizontalBtnLayout.addWidget(self.axisCenterBtn)
-        self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
-        self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
-        self.horizontalBtnLayout.addWidget(self.clearPlotBtn)
-        #  self.horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
-
-        # add all layouts
-        self.layout = QVBoxLayout()
-        self.layout.setSpacing(10)
-        self.layout.addWidget(self.inoutBox)
-        self.layout.addWidget(self.measureBox)
-        self.layout.addLayout(self.horizontalGraphLayout)
-        self.layout.addLayout(self.horizontalBtnLayout)
-        self.layout.addWidget(self.table)
-        #  self.layout.addWidget(self.exportBtn)
-        #  self.layout.addWidget(self.calibrateBtn)
-        #  self.layout.setContentsMargins(30, 60, 60, 30)
-        self.widget.setLayout(self.layout)
+        ## add all layouts to mainLayout
+        # Container widget
+        self.widget = QWidget(self)
+        self.setCentralWidget(self.widget)
+        self.mainLayout = QVBoxLayout()
+        self.mainLayout.setSpacing(10)
+        self.mainLayout.addWidget(self.inoutBox)
+        self.mainLayout.addWidget(self.measureBox)
+        self.mainLayout.addLayout(self.graphLayout)
+        self.mainLayout.addWidget(self.table)
+        self.widget.setLayout(self.mainLayout)
 
         self.setWindowTitle("PSPlot")
         self.resize(1000, 600)
         self.setMinimumSize(600, 350)
         self.center()
-        self.setCentralWidget(self.widget)
 
         # Connect to the serial device (first, newest detected)
         self.serialScan()
         self.serialList.setCurrentIndex(0)
         self.serialConnect(0)
 
-        self.pw.setFocus()
-        self.widget.setTabOrder(self.pw, self.serialList)
+        # TODO update this to include all new widgets
+        self.twoDPlotWidget.setFocus()
+        self.widget.setTabOrder(self.twoDPlotWidget, self.serialList)
 
     def serialScan(self) -> None:
         """Scans for available serial devices and updates the list"""
@@ -398,33 +434,65 @@ class PsPlot(QMainWindow):
         self.move(qr.topLeft())
 
     def centerAxisPlotChbxClick(self) -> None:
-        self.pw.setFocus()
-        if self.axisAutoRangeChbx.isChecked():
-            self.axisAutoRestoreChbx.setChecked(0)
+        self.twoDPlotWidget.setFocus()
+        if self.twoDAxisAutoRangeChbx.isChecked():
+            # self.twoDAxisAutoRestoreChbx.setChecked(0)
             self.centerAxisPlot()
 
     def centerAxisPlot(self) -> None:
-        # when coming from self.plot checking if it is checked is now done twice
-        self.pi.getViewBox().autoRange()
-        all_plotted_data = [x for y in self.old_data for x in y] + (self.baseline or [])
-        self.pi.getViewBox().setYRange(
-            min=min(all_plotted_data) - self.yPadding,
-            max=max(all_plotted_data) + self.yPadding,
-        )
+        # TODO make it so that this also corrects for baseline
+        if len(self.old_data) > 0 or self.baseline is not None:
+            # when coming from self.plot checking if it is checked is now done twice
+            self.twoDPlotWidgetItem.getViewBox().autoRange()
+            all_plotted_data = [x for y in self.old_data for x in y]
+            if self.baseline is not None:
+                all_plotted_data.extend(self.baseline)
+            print(sorted(all_plotted_data))
+            print(
+                min(all_plotted_data) - self.yPadding,
+            )
+            print(
+                max(all_plotted_data) - self.yPadding,
+            )
+
+            # self.twoDPlotWidgetItem.getViewBox().setYRange(
+            self.twoDPlotWidget.setYRange(
+                min(all_plotted_data),
+                max(all_plotted_data),
+                padding=self.yPadding,
+            )
+            # self.twoDPlotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
     def restoreAxisPlotChbxClick(self) -> None:
-        self.pw.setFocus()
-        if self.axisAutoRestoreChbx.isChecked():
-            self.axisAutoRangeChbx.setChecked(0)
+        self.twoDPlotWidget.setFocus()
+        if self.twoDAxisAutoRestoreChbx.isChecked():
+            # self.twoDAxisAutoRangeChbx.setChecked(0)
             self.restoreAxisPlot()
 
+    def twoDAxisCenterBtnFunction(self):
+        self.centerAxisPlot()
+        self.twoDdisableAllChbx()
+
+    def twoDAxisRestoreBtnFunction(self):
+        self.restoreAxisPlotChbxClick()
+        self.twoDdisableAllChbx()
+
+    def twoDdisableAllChbx(self):
+        # exclusive is used here because otherwise the currently selected chbx cannot be unchecked
+        self.twoDAutoBtnGroup.setExclusive(False)
+        for button in self.twoDAutoBtnGroup.buttons():
+            button.setChecked(False)
+        self.twoDAutoBtnGroup.setExclusive(True)
+
     def restoreAxisPlot(self) -> None:
-        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-        self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
+        self.twoDPlotWidget.setXRange(
+            self.wavelengths[0], self.wavelengths[-1], padding=0.1
+        )
+        self.twoDPlotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
     def clearGraph(self) -> None:
         self.old_data.clear()
-        self.pw.clear()
+        self.twoDPlotWidget.clear()
         self.axes.cla()
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
@@ -436,72 +504,101 @@ class PsPlot(QMainWindow):
             or e.key() == Qt.Key.Key_W
             or e.key() == Qt.Key.Key_Plus
         ):
-            self.pi.getViewBox().scaleBy((1, 0.9))
+            self.twoDPlotWidgetItem.getViewBox().scaleBy((1, 0.9))
 
         elif (
             e.key() == Qt.Key.Key_Down
             or e.key() == Qt.Key.Key_S
             or e.key() == Qt.Key.Key_Minus
         ):
-            self.pi.getViewBox().scaleBy((1, 1.1))
+            self.twoDPlotWidgetItem.getViewBox().scaleBy((1, 1.1))
 
         elif e.key() == Qt.Key.Key_Left or e.key() == Qt.Key.Key_A:
-            self.pi.getViewBox().translateBy((-10, 0))
+            self.twoDPlotWidgetItem.getViewBox().translateBy((-10, 0))
 
         elif e.key() == Qt.Key.Key_Right or e.key() == Qt.Key.Key_D:
-            self.pi.getViewBox().translateBy((+10, 0))
+            self.twoDPlotWidgetItem.getViewBox().translateBy((+10, 0))
 
         elif e.key() == Qt.Key.Key_Home:
-            self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-            self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
+            self.twoDPlotWidget.setXRange(
+                self.wavelengths[0], self.wavelengths[-1], padding=0.1
+            )
+            self.twoDPlotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         elif e.key() == Qt.Key.Key_Space:
             self.takeRegularMeasurement()
 
     def takeRegularMeasurement(self):
+        if (
+            self.calibration_counter == 0
+            and self.overwrite_no_callibration_warning == False
+        ):
+            button = QMessageBox.warning(
+                self,
+                "taking measurement",
+                "No calibration is present are you sure you want to take a measurement?\n(if yes: PSPlot might crash)",
+                QMessageBox.Yes,
+                QMessageBox.No,
+            )
+            if button == QMessageBox.No:
+                return
+            else:
+                self.overwrite_no_callibration_warning = True
+
         data = self.getMeasurement()
         self.addMeasurement(data)
         self.plot(data)
         self.threeD([data[1], data[4], data[6]])
 
     def addCalibrationMeasurement(self, data: List[float]) -> None:
-        self.addToTable(data, True)
+        self.addToTable(data, calibrated_measurement=True)
 
     def addMeasurement(self, data: List[float]) -> None:
         name = self.sampleNameSelection.currentText()
         if name not in self.sample_labels:
             self.sample_labels.add(name)
-            # self.sampleNameSelection.addItem(name)
+            self.sampleNameSelection.addItem(name)
 
-        # self.sampleNameSelection.setCurrentText(name)
+        material = self.sampleMaterialSelection.currentText()
+        if material not in self.sample_materials:
+            self.sample_materials.add(material)
+            self.sampleMaterialSelection.addItem(material)
 
         # use calibration if possible
         if self.baseline is not None:
             dataCalibrated = [dat / base for dat, base in zip(data, self.baseline)]
-            #  data = dataCalibrated
+            # data = dataCalibrated
 
-        self.addToTable(data, name)
+        self.addToTable(data, name=name, material=material)
 
         self.old_data.append(data)
 
     def addToTable(
-        self, data: List[float], name: str = "", calibrated_measurement: bool = False
+        self,
+        data: List[float],
+        name: str = "",
+        material: str = "unknown",
+        calibrated_measurement: bool = False,
     ) -> None:
-        # add row
         nRows = self.table.rowCount()
+        # add a row
         self.table.setRowCount(nRows + 1)
-        self.table.setItem(
-            nRows, 0, QTableWidgetItem(name)
-        )  # sample name (user-editable, empty by default)
+
+        # add sample name as column 0
+        self.table.setItem(nRows, 0, QTableWidgetItem(name))
+        # add sample material as column 1
+        self.table.setItem(nRows, 1, QTableWidgetItem(material))
+
         if calibrated_measurement:
             self.row_labels.append(f"c {self.calibration_counter}")
+            self.table.setItem(nRows, 1, QTableWidgetItem("spectralon"))
         else:
             self.row_labels.append(str(nRows + 1 - self.calibration_counter))
         self.table.setVerticalHeaderLabels(self.row_labels)
 
         # add value for every column of new row
         dataStr = self.listToString(data)
-        for col, val in enumerate(dataStr.split(), start=1):
+        for col, val in enumerate(dataStr.split(), start=2):
             cell = QTableWidgetItem(val)
             cell.setFlags(
                 cell.flags() & ~Qt.ItemFlag.ItemIsEditable
@@ -602,19 +699,25 @@ class PsPlot(QMainWindow):
         if name not in self.sample_labels:
             self.sample_labels.add(name)
 
+    def sampleMaterialSelectionChanged(self, name):
+        if name not in self.sample_materials:
+            self.sample_materials.add(name)
+
     def plot(self, data: Optional[List[float]] = None) -> None:
-        self.pw.clear()
+        self.twoDPlotWidget.clear()
         self.baseline = np.array(self.baseline)
 
         # add the baseline of the last calibration
         if self.baseline is not None:
             normalizedbasline = self.baseline / self.baseline
-            pc = self.pw.plot(self.wavelengths, normalizedbasline, pen=(255, 0, 0))
+            pc = self.twoDPlotWidget.plot(
+                self.wavelengths, normalizedbasline, pen=(255, 0, 0)
+            )
 
         for dat in self.old_data:
             dat = np.array(dat)
             normalizedolddat = dat / self.baseline
-            pc = self.pw.plot(
+            pc = self.twoDPlotWidget.plot(
                 self.wavelengths,
                 normalizedolddat,
                 pen=(0, 100, 0),
@@ -623,21 +726,25 @@ class PsPlot(QMainWindow):
             pc.setSymbol("x")
 
         lineC = tuple(
-            self.pw.palette().color(QPalette.ColorRole.WindowText).getRgb()[:-1]
+            self.twoDPlotWidget.palette()
+            .color(QPalette.ColorRole.WindowText)
+            .getRgb()[:-1]
         )
         markC = tuple(
-            self.pw.palette().color(QPalette.ColorRole.Highlight).getRgb()[:-1]
+            self.twoDPlotWidget.palette()
+            .color(QPalette.ColorRole.Highlight)
+            .getRgb()[:-1]
         )
         pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="o", width=2)
         if data is not None:
             data = np.array(data)
             normalizeddata = data / self.baseline
-            pc = self.pw.plot(self.wavelengths, normalizeddata, pen=pen)
+            pc = self.twoDPlotWidget.plot(self.wavelengths, normalizeddata, pen=pen)
             pc.setSymbol("o")
 
-        if self.axisAutoRestoreChbx.isChecked():
+        if self.twoDAxisAutoRestoreChbx.isChecked():
             self.restoreAxisPlot()
-        if self.axisAutoRangeChbx.isChecked():
+        if self.twoDAxisAutoRangeChbx.isChecked():
             self.centerAxisPlot()
 
     def loadDatasetOnline(self):
@@ -692,7 +799,7 @@ class PsPlot(QMainWindow):
                 QMessageBox.Yes,
                 QMessageBox.No,
             )
-            if button:
+            if button == QMessageBox.Yes:
                 self.loadDatasetOnline()
             else:
                 return
