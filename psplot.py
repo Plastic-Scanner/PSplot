@@ -95,7 +95,9 @@ class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.ctr = 0
-        prevent_loop = False
+        self.prevent_loop = False
+
+        self.dataset_url = "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
 
         # HARDCODED SETTINGS
         self.wavelengths = [
@@ -139,7 +141,11 @@ class PsPlot(QMainWindow):
         self.serialNotif = QLabel()
 
         # loading and saving
-        self.loadDatasetBtn = QPushButton("Load dataset from file")
+        self.loadDatasetLocalBtn = QPushButton("Load dataset from file")
+        self.loadDatasetLocalBtn.clicked.connect(self.loadDatasetLocal)
+
+        self.loadDatasetOnlineBtn = QPushButton("Load dataset from github")
+        self.loadDatasetOnlineBtn.clicked.connect(self.loadDatasetOnline)
 
         # export and calibrate
         self.exportBtn = QPushButton("Export dataset to file")
@@ -152,7 +158,8 @@ class PsPlot(QMainWindow):
 
         # load and save horizontal layout
         self.horizontalLoadSaveLayout = QHBoxLayout()
-        self.horizontalLoadSaveLayout.addWidget(self.loadDatasetBtn)
+        self.horizontalLoadSaveLayout.addWidget(self.loadDatasetOnlineBtn)
+        self.horizontalLoadSaveLayout.addWidget(self.loadDatasetLocalBtn)
         self.horizontalLoadSaveLayout.addWidget(self.exportBtn)
 
         self.inoutBoxLayout = QVBoxLayout()
@@ -180,16 +187,11 @@ class PsPlot(QMainWindow):
         self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
         self.regularMeasurementBtn.setDisabled(True)
 
-        self.sampleNameInput = QLineEdit()
-        self.sampleNameInput.setPlaceholderText("sample name")
-        self.sampleNameInput.setClearButtonEnabled(True)
-        self.sampleNameInput.textChanged.connect(self.sampleNameInputChanged)
-        # disable the next line to make regular measurements only posible after a calibration measurement
-        self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
-
+        self.serialNotif = QLabel()
         self.sampleNameSelection = QComboBox()
         self.sampleNameSelection.setDuplicatesEnabled(False)
-        self.sampleNameSelection.currentTextChanged.connect(
+        self.sampleNameSelection.setEditable(True)
+        self.sampleNameSelection.currentIndexChanged.connect(
             self.sampleNameSelectionChanged
         )
         self.sampleNameSelection.setPlaceholderText("select sample name")
@@ -199,8 +201,7 @@ class PsPlot(QMainWindow):
         self.calibrationLayout.addWidget(self.clearCalibrationBtn)
 
         self.sampleNameLayout = QHBoxLayout()
-        self.sampleNameLayout.addWidget(self.sampleNameInput, 50)
-        self.sampleNameLayout.addWidget(self.sampleNameSelection, 50)
+        self.sampleNameLayout.addWidget(self.sampleNameSelection)
 
         self.measureBoxLayout = QVBoxLayout()
         self.measureBoxLayout.addLayout(self.calibrationLayout)
@@ -244,17 +245,20 @@ class PsPlot(QMainWindow):
         self.threeDdata_colors = []
         self.threeDgraph = Q3DScatter()
         self.threeDgraph_container = QWidget.createWindowContainer(self.threeDgraph)
-        # TODO make the axes display more than 2 values https://doc.qt.io/qt-5/qvalueaxis.html#applyNiceNumbers
-        self.threeDgraph.axisX().setTitle("1050nm")
-        self.threeDgraph.axisY().setTitle("1450")
-        self.threeDgraph.axisZ().setTitle("1650nm")
-        self.threeDgraph.scene()
-        # set the camera
-        # self.threeDgraph.setMeasureFps(True)
+
         self.threeDgraph.setOrthoProjection(True)
         self.threeDgraph.scene().activeCamera().setCameraPreset(
             Q3DCamera.CameraPresetIsometricLeft
         )
+        self.threeDgraph.axisX().setTitle("1050 nm")
+        self.threeDgraph.axisX().setTitleVisible(True)
+        self.threeDgraph.axisX().setLabelFormat("%.4f")
+        self.threeDgraph.axisY().setTitle("1450 nm")
+        self.threeDgraph.axisY().setTitleVisible(True)
+        self.threeDgraph.axisY().setLabelFormat("%.4f")
+        self.threeDgraph.axisZ().setTitle("1650 nm")
+        self.threeDgraph.axisZ().setTitleVisible(True)
+        self.threeDgraph.axisZ().setLabelFormat("%.4f")
 
         # styling
         self.threeDgraph.setShadowQuality(QAbstract3DGraph.ShadowQuality(0))
@@ -464,15 +468,12 @@ class PsPlot(QMainWindow):
         self.addToTable(data, True)
 
     def addMeasurement(self, data: List[float]) -> None:
-        name = self.sampleNameInput.text()
+        name = self.sampleNameSelection.currentText()
         if name not in self.sample_labels:
             self.sample_labels.add(name)
-            self.sampleNameSelection.addItem(name)
-            completer = QCompleter(list(self.sample_labels))
-            completer.setCaseSensitivity(False)
-            self.sampleNameInput.setCompleter(completer)
+            # self.sampleNameSelection.addItem(name)
 
-        self.sampleNameSelection.setCurrentText(name)
+        # self.sampleNameSelection.setCurrentText(name)
 
         # use calibration if possible
         if self.baseline is not None:
@@ -573,7 +574,6 @@ class PsPlot(QMainWindow):
             self.clearCalibrationBtn.setEnabled(True)
             self.regularMeasurementBtn.setEnabled(True)
             self.regularMeasurementBtn.setToolTip("")
-            self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
 
         if button == QMessageBox.StandardButton.Yes:
             self.baseline = self.getMeasurement()
@@ -590,25 +590,6 @@ class PsPlot(QMainWindow):
     def listToString(self, data: List[float]) -> str:
         return " ".join([f"{i:.7f}" for i in data])
 
-    def exportCsv(self) -> None:
-        fname, _ = QFileDialog.getSaveFileName(self, "Save File")
-        with open(fname, "w", newline="") as csvfile:
-            rows = self.table.rowCount()
-            cols = self.table.columnCount()
-            writer = csv.writer(csvfile)
-            writer.writerow(self.wavelengths)
-            for i in range(rows):
-                row = []
-                for j in range(cols):
-                    try:
-                        val = self.table.item(i, j).text()
-                    except (
-                        AttributeError
-                    ):  # sometimes table.item() returns None - bug in fw/serial comm?
-                        val = ""
-                    row.append(val)
-                writer.writerow(row)
-
     def tableChanged(self, item):
         # if it was a label that changed, add it to the list of labels
         if item.column() == 0:
@@ -617,17 +598,9 @@ class PsPlot(QMainWindow):
                 self.sample_labels.add(name)
                 self.sampleNameSelection.addItem(name)
 
-    def sampleNameInputChanged(self, input_text):
-        if input_text in self.sample_labels:
-            self.sampleNameSelection.setCurrentText(input_text)
-        else:
-            self.prevent_loop = True
-            self.sampleNameSelection.setCurrentText("")
-
-    def sampleNameSelectionChanged(self, sample_name):
-        if not self.prevent_loop:
-            self.sampleNameInput.setText(sample_name)
-            self.prevent_loop = False
+    def sampleNameSelectionChanged(self, name):
+        if name not in self.sample_labels:
+            self.sample_labels.add(name)
 
     def plot(self, data: Optional[List[float]] = None) -> None:
         self.pw.clear()
@@ -667,12 +640,28 @@ class PsPlot(QMainWindow):
         if self.axisAutoRangeChbx.isChecked():
             self.centerAxisPlot()
 
-    def loadDataset(self):
+    def loadDatasetOnline(self):
+        QMessageBox.information(
+            self, "loading dataset", f"Dataset is loaded from url:\n{self.dataset_url}"
+        )
+        self.loadDataset(self.dataset_url)
+
+    def loadDatasetLocal(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load dataset",
+            "",
+            "CSV (*.csv);;All Files (*)",
+        )
+        if not filename:
+            QMessageBox.information(self, "loading dataset", "No file was selected")
+        else:
+            self.loadDataset(filename)
+
+    def loadDataset(self, dataset_path: str):
         # the goal here is to load a dataset to visualize in the 3D scatterplot
         # import the dataframe
-        df_raw = pd.read_csv(
-            "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
-        )
+        df_raw = pd.read_csv(dataset_path)
         # calculate the mean of the last 8 columns of the "spec" readings
         spec_df = df_raw.query("ID == 'spectralon'")
         spectralon_wavelengths = spec_df.iloc[:, -8:].mean()
@@ -696,7 +685,18 @@ class PsPlot(QMainWindow):
 
     def showDataset(self):
         if self.datasetloaded is None:
-            self.loadDataset()
+            button = QMessageBox.warning(
+                self,
+                "showing dataset",
+                "a dataset must first be loaded, woud you like to load the online dataset?",
+                QMessageBox.Yes,
+                QMessageBox.No,
+            )
+            if button:
+                self.loadDatasetOnline()
+            else:
+                return
+
         for sample in self.df_train.index:
             self.axes.scatter(
                 self.df_train["nm1050"],
@@ -704,6 +704,33 @@ class PsPlot(QMainWindow):
                 self.df_train["nm1650"],
                 c=self.df_train["PlasticNumber"],
             )
+
+    def exportCsv(self) -> None:
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save File",
+            "",
+            "CSV (*.csv);;All Files (*)",
+        )
+        if not fname:
+            QMessageBox.information(self, "saving dataset", "No file was selected")
+        else:
+            with open(fname, "w", newline="") as csvfile:
+                rows = self.table.rowCount()
+                cols = self.table.columnCount()
+                writer = csv.writer(csvfile)
+                writer.writerow(self.wavelengths)
+                for i in range(rows):
+                    row = []
+                    for j in range(cols):
+                        try:
+                            val = self.table.item(i, j).text()
+                        except (
+                            AttributeError
+                        ):  # sometimes table.item() returns None - bug in fw/serial comm?
+                            val = ""
+                        row.append(val)
+                    writer.writerow(row)
 
     def threeD(
         self,
@@ -784,6 +811,7 @@ if __name__ == "__main__":
         app.setAttribute(Qt.AA_EnableHighDpiScaling)
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
+    app.setStyle("Fusion")
     window = PsPlot()
     window.show()
     app.exec()
