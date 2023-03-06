@@ -25,9 +25,16 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt5.QtDataVisualization import (Q3DCamera, Q3DTheme, Q3DScatter,
-        QAbstract3DGraph, QAbstract3DSeries, QScatter3DSeries,
-        QScatterDataItem, QScatterDataProxy)
+from PyQt5.QtDataVisualization import (
+    Q3DCamera,
+    Q3DTheme,
+    Q3DScatter,
+    QAbstract3DGraph,
+    QAbstract3DSeries,
+    QScatter3DSeries,
+    QScatterDataItem,
+    QScatterDataProxy,
+)
 import csv
 from collections import deque
 import numpy as np
@@ -146,7 +153,6 @@ class PsPlot(QMainWindow):
         self.horizontalLoadSaveLayout.addWidget(self.loadDatasetBtn)
         self.horizontalLoadSaveLayout.addWidget(self.exportBtn)
 
-
         self.inoutBoxLayout = QVBoxLayout()
         self.inoutBoxLayout.addLayout(self.horizontalSerialLayout)
         self.inoutBoxLayout.addLayout(self.horizontalLoadSaveLayout)
@@ -162,18 +168,28 @@ class PsPlot(QMainWindow):
         self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
         self.clearCalibrationBtn.setDisabled(True)
 
-        self.regularMeasurementBtn = QPushButton("Take measurement\n(shortcut: spacebar)")
+        # the next two buttons will be enabled after a calibration has been performed
+        self.regularMeasurementBtn = QPushButton(
+            "Take measurement\n(shortcut: spacebar)"
+        )
+        self.regularMeasurementBtn.setToolTip(
+            "a calibration measurement needs to be taken first"
+        )
         self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
+        self.regularMeasurementBtn.setDisabled(True)
 
         self.sampleNameInput = QLineEdit()
         self.sampleNameInput.setPlaceholderText("sample name")
         self.sampleNameInput.setClearButtonEnabled(True)
-        self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
+        # this is connected to takeregularmeasurement after a callibration measurement has been performed
+        # self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
 
         self.sampleNameSelection = QComboBox()
         self.sampleNameSelection.setDuplicatesEnabled(False)
-        self.sampleNameSelection.currentTextChanged.connect(self.sampleNameSelectionChanged)
-        #  self.sampleNameSelection.setPlaceholderText("select sample name")
+        self.sampleNameSelection.currentTextChanged.connect(
+            self.sampleNameSelectionChanged
+        )
+        self.sampleNameSelection.setPlaceholderText("select sample name")
 
         self.calibrationLayout = QHBoxLayout()
         self.calibrationLayout.addWidget(self.calibrateBtn)
@@ -190,7 +206,6 @@ class PsPlot(QMainWindow):
 
         self.measureBox = QGroupBox("measuring")
         self.measureBox.setLayout(self.measureBoxLayout)
-
 
         ## Plot
         self.pw = pg.PlotWidget(background=None)
@@ -226,11 +241,16 @@ class PsPlot(QMainWindow):
         self.threeDdata_colors = []
         self.threeDgraph = Q3DScatter()
         self.threeDgraph_container = QWidget.createWindowContainer(self.threeDgraph)
-        self.threeDgraph.axisX().setTitle('1050nm')
-        self.threeDgraph.axisY().setTitle('1450')
-        self.threeDgraph.axisZ().setTitle('1650nm')
-        self.threeDgraph.setMeasureFps(True)
+        self.threeDgraph.axisX().setTitle("1050nm")
+        self.threeDgraph.axisY().setTitle("1450")
+        self.threeDgraph.axisZ().setTitle("1650nm")
+        self.threeDgraph.scene()
+        # set the camera
+        # self.threeDgraph.setMeasureFps(True)
         self.threeDgraph.setOrthoProjection(True)
+        self.threeDgraph.scene().activeCamera().setCameraPreset(
+            Q3DCamera.CameraPresetIsometricLeft
+        )
 
         # styling
         self.threeDgraph.setShadowQuality(QAbstract3DGraph.ShadowQuality(0))
@@ -240,6 +260,9 @@ class PsPlot(QMainWindow):
         currentTheme.setLabelBackgroundEnabled(True)
         currentTheme.setAmbientLightStrength(0.6)
         currentTheme.setGridEnabled(True)
+        back = QColor(self.palette().window().color())
+        currentTheme.setBackgroundColor(back)
+        currentTheme.setWindowColor(back)
 
         # holds all of the scatterdataseries
         self.scatter_proxy = QScatterDataProxy()
@@ -251,7 +274,6 @@ class PsPlot(QMainWindow):
         #  series.setItemLabelFormat("@xLabel | @yLabel | @zLabel")
         #  series.setMeshSmooth(True)
         #  series.setBaseColor(QColor(0,255,255))
-
 
         #  self.threeDgraph.addSeries(series)
         #  self.data = [QScatterDataItem(QVector3D(i,i,i)) for i in range(10)]
@@ -289,7 +311,6 @@ class PsPlot(QMainWindow):
 
         self.clearPlotBtn = QPushButton("Clear graph")
         self.clearPlotBtn.clicked.connect(self.clearGraph)
-
 
         self.horizontalBtnLayout = QHBoxLayout()
         #  self.horizontalBtnLayout.addWidget(self.loadDatasetChbx)
@@ -392,7 +413,7 @@ class PsPlot(QMainWindow):
     def clearGraph(self) -> None:
         self.old_data.clear()
         self.pw.clear()
-        self.axes.cla()        
+        self.axes.cla()
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
         if e.key() == Qt.Key.Key_Escape or e.key() == Qt.Key.Key_Q:
@@ -429,13 +450,12 @@ class PsPlot(QMainWindow):
         data = self.getMeasurement()
         self.addMeasurement(data)
         self.plot(data)
-        self.threeD([data[1],data[4],data[6]])
+        self.threeD([data[1], data[4], data[6]])
 
     def addCalibrationMeasurement(self, data: List[float]) -> None:
         self.addToTable(data, True)
 
     def addMeasurement(self, data: List[float]) -> None:
-
         name = self.sampleNameInput.text()
         if name not in self.sample_labels:
             self.sample_labels.add(name)
@@ -495,7 +515,7 @@ class PsPlot(QMainWindow):
             # parse data
             data = line.strip("> ").strip("\r\n").split("\t")
             data = [float(x) for x in data if x != ""]
-            #print(data)
+            # print(data)
         else:
             # dummy data with random noise
             data = data = [
@@ -534,12 +554,16 @@ class PsPlot(QMainWindow):
         return data
 
     def calibrate(self) -> None:
-
         button = QMessageBox.question(
             self, "Calibration", "Is the spectralon sample on the sensor?"
         )
-        if button == QMessageBox.StandardButton.Yes:
+        if self.calibration_counter == 0:
             self.clearCalibrationBtn.setEnabled(True)
+            self.regularMeasurementBtn.setEnabled(True)
+            self.regularMeasurementBtn.setToolTip("")
+            self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
+
+        if button == QMessageBox.StandardButton.Yes:
             self.baseline = self.getMeasurement()
             self.calibration_counter += 1
             self.addCalibrationMeasurement(self.baseline)
@@ -566,7 +590,9 @@ class PsPlot(QMainWindow):
                 for j in range(cols):
                     try:
                         val = self.table.item(i, j).text()
-                    except AttributeError:  # sometimes table.item() returns None - bug in fw/serial comm?
+                    except (
+                        AttributeError
+                    ):  # sometimes table.item() returns None - bug in fw/serial comm?
                         val = ""
                     row.append(val)
                 writer.writerow(row)
@@ -582,21 +608,23 @@ class PsPlot(QMainWindow):
     def sampleNameSelectionChanged(self, sample_name):
         self.sampleNameInput.setText(sample_name)
 
-
     def plot(self, data: Optional[List[float]] = None) -> None:
         self.pw.clear()
         self.baseline = np.array(self.baseline)
 
         # add the baseline of the last calibration
         if self.baseline is not None:
-            normalizedbasline = self.baseline/self.baseline
+            normalizedbasline = self.baseline / self.baseline
             pc = self.pw.plot(self.wavelengths, normalizedbasline, pen=(255, 0, 0))
 
         for dat in self.old_data:
             dat = np.array(dat)
-            normalizedolddat = dat/self.baseline
+            normalizedolddat = dat / self.baseline
             pc = self.pw.plot(
-                self.wavelengths, normalizedolddat, pen=(0, 100, 0), symbolBrush=(0, 255, 0)
+                self.wavelengths,
+                normalizedolddat,
+                pen=(0, 100, 0),
+                symbolBrush=(0, 255, 0),
             )
             pc.setSymbol("x")
 
@@ -609,7 +637,7 @@ class PsPlot(QMainWindow):
         pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="o", width=2)
         if data is not None:
             data = np.array(data)
-            normalizeddata = data/self.baseline
+            normalizeddata = data / self.baseline
             pc = self.pw.plot(self.wavelengths, normalizeddata, pen=pen)
             pc.setSymbol("o")
 
@@ -619,60 +647,80 @@ class PsPlot(QMainWindow):
             self.centerAxisPlot()
 
     def loadDataset(self):
-        #the goal here is to load a dataset to visualize in the 3D scatterplot
+        # the goal here is to load a dataset to visualize in the 3D scatterplot
         # import the dataframe
-        df_raw = pd.read_csv("https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv")
+        df_raw = pd.read_csv(
+            "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
+        )
         # calculate the mean of the last 8 columns of the "spec" readings
         spec_df = df_raw.query("ID == 'spectralon'")
         spectralon_wavelengths = spec_df.iloc[:, -8:].mean()
-        #preprocess known dataset
+
+        # preprocess known dataset
         def apply_snv_transform(row):
             specific_wavelengths = row[-8:]
             return self.snv_transform(specific_wavelengths, spectralon_wavelengths)
 
         # Apply the function to each row of the dataframe
         df_raw.iloc[:, -8:] = df_raw.iloc[:, -8:].apply(apply_snv_transform, axis=1)
-        df_raw["PlasticNumber"] = df_raw["PlasticType"].map({"PET": 1,"HDPE": 2,"PVC": 3,"LDPE": 4,"PP": 5,"PS": 6,"other": 7})
-        #print(df_raw["PlasticNumber"])
+        df_raw["PlasticNumber"] = df_raw["PlasticType"].map(
+            {"PET": 1, "HDPE": 2, "PVC": 3, "LDPE": 4, "PP": 5, "PS": 6, "other": 7}
+        )
+        # print(df_raw["PlasticNumber"])
 
-        types_to_train = ["PET", "HDPE", "PP","PS"]
+        types_to_train = ["PET", "HDPE", "PP", "PS"]
         self.df_train = df_raw[df_raw.PlasticType.isin(types_to_train)]
-        
+
         self.datasetloaded = True
 
     def showDataset(self):
         if self.datasetloaded is None:
             self.loadDataset()
         for sample in self.df_train.index:
-            self.axes.scatter(self.df_train["nm1050"],self.df_train["nm1450"],self.df_train["nm1650"], c=self.df_train["PlasticNumber"])        
+            self.axes.scatter(
+                self.df_train["nm1050"],
+                self.df_train["nm1450"],
+                self.df_train["nm1650"],
+                c=self.df_train["PlasticNumber"],
+            )
 
-    def threeD(self, data: Optional[List[float]] = None, color: Optional[Tuple[int]] = (125,125,125)) -> None:
+    def threeD(
+        self,
+        data: List[float],
+        color: Tuple[int] = (125, 125, 125),
+        name: str = "",
+    ) -> None:
         if len(color) != 3 or len(data) != 3:
             raise ValueError("argument may only contain 3 items")
-        self.ctr+=1
-        color = [(255,0,0),(0,255,0)][self.ctr%2]
+
+        self.ctr += 1
+        color = [(255, 0, 0), (0, 255, 0)][self.ctr % 2]
+        name = ["red", "green"][self.ctr % 2]
 
         if color not in self.threeDdata:
             self.threeDdata[color] = []
             # the list just exists to make sure that the colors maintain their order
             self.threeDdata_colors.append(color)
             # add a series and make it the correct color
-            if self.ctr%2:
+            if self.ctr % 2:
                 series = QScatter3DSeries(self.scatter_proxy)
             else:
                 series = QScatter3DSeries(self.scatter_proxy2)
-            series.setItemLabelFormat("@xLabel | @yLabel | @zLabel")
+            series.setName(name)
+            series.setItemLabelFormat("@xLabel | @yLabel | @zLabel | @seriesName")
             series.setMeshSmooth(True)
             series.setBaseColor(QColor(*color))
             self.threeDgraph.addSeries(series)
-        
+
         self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
 
         #  self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
 
         for idx, currcolor in enumerate(self.threeDdata_colors):
             #  print(f"{currcolor=}")
-            self.threeDgraph.seriesList()[idx].dataProxy().resetArray(self.threeDdata[currcolor])
+            self.threeDgraph.seriesList()[idx].dataProxy().resetArray(
+                self.threeDdata[currcolor]
+            )
 
             #  self.threeDgraph.seriesList()[0].dataProxy().resetArray(self.threeDdata[currcolor])
 
@@ -686,17 +734,18 @@ class PsPlot(QMainWindow):
         #  print("hier")
         #  self.axes.scatter(corrected[1],corrected[4],corrected[6], c= "red")
 
-    def snv_transform(self,input_wavelengths, spectralon_wavelengths):
+    def snv_transform(self, input_wavelengths, spectralon_wavelengths):
         # Divide specific wavelengths by reference wavelengths
         input_wavelengths = input_wavelengths / spectralon_wavelengths
-        
+
         # Subtract the mean from each wavelength measurement
         input_wavelengths = input_wavelengths - input_wavelengths.mean()
-        
+
         # Divide the resulting values by the standard deviation
         output_wavelengths = input_wavelengths / input_wavelengths.std()
-        
+
         return output_wavelengths
+
 
 if __name__ == "__main__":
     print(f"App is running on QT version {QT_VERSION_STR}")
@@ -704,11 +753,13 @@ if __name__ == "__main__":
 
     # this should add some optimisations for high-DPI screens
     # https://pyqtgraph.readthedocs.io/en/latest/how_to_use.html#hidpi-displays
-    QT_version = float(''.join(QT_VERSION_STR.split('.')[:2]))
+    QT_version = float("".join(QT_VERSION_STR.split(".")[:2]))
     if QT_version >= 5.14 and QT_version < 6:
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-        app.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    elif QT_version>=5.14 and QT_version < 5.14:
+        app.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+    elif QT_version >= 5.14 and QT_version < 5.14:
         app.setAttribute(Qt.AA_EnableHighDpiScaling)
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
