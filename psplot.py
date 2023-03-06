@@ -95,6 +95,7 @@ class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.ctr = 0
+        prevent_loop = False
 
         # HARDCODED SETTINGS
         self.wavelengths = [
@@ -183,8 +184,8 @@ class PsPlot(QMainWindow):
         self.sampleNameInput.setPlaceholderText("sample name")
         self.sampleNameInput.setClearButtonEnabled(True)
         self.sampleNameInput.textChanged.connect(self.sampleNameInputChanged)
-        # this is connected to takeregularmeasurement after a callibration measurement has been performed
-        # self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
+        # disable the next line to make regular measurements only posible after a calibration measurement
+        self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
 
         self.sampleNameSelection = QComboBox()
         self.sampleNameSelection.setDuplicatesEnabled(False)
@@ -243,6 +244,7 @@ class PsPlot(QMainWindow):
         self.threeDdata_colors = []
         self.threeDgraph = Q3DScatter()
         self.threeDgraph_container = QWidget.createWindowContainer(self.threeDgraph)
+        # TODO make the axes display more than 2 values https://doc.qt.io/qt-5/qvalueaxis.html#applyNiceNumbers
         self.threeDgraph.axisX().setTitle("1050nm")
         self.threeDgraph.axisY().setTitle("1450")
         self.threeDgraph.axisZ().setTitle("1650nm")
@@ -265,6 +267,10 @@ class PsPlot(QMainWindow):
         back = QColor(self.palette().window().color())
         currentTheme.setBackgroundColor(back)
         currentTheme.setWindowColor(back)
+        fontsize = currentTheme.font().pointSizeF()
+        font = currentTheme.font()
+        font.setPointSizeF(4 * fontsize)
+        currentTheme.setFont(font)
 
         # holds all of the scatterdataseries
         self.scatter_proxy = QScatterDataProxy()
