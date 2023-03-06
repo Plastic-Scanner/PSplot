@@ -6,6 +6,7 @@ from PyQt5.QtGui import QKeySequence, QKeyEvent, QColor, QPalette, QVector3D
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
+    QCompleter,
     QCheckBox,
     QDockWidget,
     QFileDialog,
@@ -181,6 +182,7 @@ class PsPlot(QMainWindow):
         self.sampleNameInput = QLineEdit()
         self.sampleNameInput.setPlaceholderText("sample name")
         self.sampleNameInput.setClearButtonEnabled(True)
+        self.sampleNameInput.textChanged.connect(self.sampleNameInputChanged)
         # this is connected to takeregularmeasurement after a callibration measurement has been performed
         # self.sampleNameInput.returnPressed.connect(self.takeRegularMeasurement)
 
@@ -460,6 +462,10 @@ class PsPlot(QMainWindow):
         if name not in self.sample_labels:
             self.sample_labels.add(name)
             self.sampleNameSelection.addItem(name)
+            completer = QCompleter(list(self.sample_labels))
+            completer.setCaseSensitivity(False)
+            self.sampleNameInput.setCompleter(completer)
+
         self.sampleNameSelection.setCurrentText(name)
 
         # use calibration if possible
@@ -605,8 +611,17 @@ class PsPlot(QMainWindow):
                 self.sample_labels.add(name)
                 self.sampleNameSelection.addItem(name)
 
+    def sampleNameInputChanged(self, input_text):
+        if input_text in self.sample_labels:
+            self.sampleNameSelection.setCurrentText(input_text)
+        else:
+            self.prevent_loop = True
+            self.sampleNameSelection.setCurrentText("")
+
     def sampleNameSelectionChanged(self, sample_name):
-        self.sampleNameInput.setText(sample_name)
+        if not self.prevent_loop:
+            self.sampleNameInput.setText(sample_name)
+            self.prevent_loop = False
 
     def plot(self, data: Optional[List[float]] = None) -> None:
         self.pw.clear()
