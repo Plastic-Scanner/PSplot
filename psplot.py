@@ -2,7 +2,15 @@
 
 from threading import currentThread
 from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
-from PyQt5.QtGui import QKeySequence, QKeyEvent, QColor, QPalette, QVector3D
+from PyQt5.QtGui import (
+    QKeySequence,
+    QKeyEvent,
+    QColor,
+    QPalette,
+    QVector3D,
+    QIcon,
+    QWindow,
+)
 from PyQt5.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -97,9 +105,12 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.setWindowIcon(QIcon("logo3-01.png"))
+
         self.ctr = 0
         self.prevent_loop = False
         self.overwrite_no_callibration_warning = False
+        self.fullscreen = False
 
         self.dataset_url = "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
 
@@ -138,8 +149,87 @@ class PsPlot(QMainWindow):
         self.row_labels = []
         # holds all of the names for all of the samples
         self.sample_labels = set()
+        # colorblind friendly colors taken and adjusted from https://projects.susielu.com/viz-palette
+        # ["#ffd700", "#ffb14e", "#fa8775", "#ea5f94", "#cd34b5", "#9d02d7", "#0000ff", "#2194F9"]
+        self.color_tableau = (
+            QColor(255, 215, 0),
+            QColor(255, 177, 78),
+            QColor(250, 135, 117),
+            QColor(234, 95, 148),
+            QColor(205, 52, 181),
+            QColor(157, 2, 215),
+            QColor(0, 0, 255),
+            QColor(33, 148, 249),
+        )
+        self.theeDPlotAllowedLabel = [
+            "PP",
+            "PET",
+            "PS",
+            "HDPE",
+            "LDPE",
+            "PVC",
+            "unknown",
+            "other",
+        ]
+        self.threeDPlotColormap = {
+            x: y for x, y in zip(self.theeDPlotAllowedLabel, self.color_tableau)
+        }
 
-        ## input output (selecting serial and saving)
+        ## setting up the UI elements
+        # input output (selecting serial and saving)
+        self._setupInOutUI()
+        # taking a measurement
+        self._setupMeasureUI()
+        # 2d Plot
+        self._setupTwoDPlotUI()
+        # 3d plot
+        self._setupThreeDPlotUI()
+        # histogram
+        self._setupHistogramUI()
+        # layout for graphs
+        self.graphLayout = QHBoxLayout()
+        self.graphLayout.setSpacing(20)
+        self.graphLayout.addLayout(self.twoDPlotLayout, 50)
+        self.graphLayout.addLayout(self.threeDPlotLayout, 50)
+        self.graphLayout.addLayout(self.histogramPlotLayout, 50)
+        # self.graphLayout.addWidget(self.threeDPlotWidget, 50)
+        ## Table to display output
+        self.tableHeader = ["name", "material"] + [str(x) for x in self.wavelengths]
+        self.table = Table()
+        self.table.setColumnCount(len(self.tableHeader))
+        self.table.setHorizontalHeaderLabels(self.tableHeader)
+        self.table.itemChanged.connect(self.tableChanged)
+        # make the first 2 columns extra wide
+        self.table.setColumnWidth(0, 200)
+        self.table.setColumnWidth(1, 200)
+
+        ## add all layouts to mainLayout
+        # Container widget
+        self.widget = QWidget(self)
+        self.setCentralWidget(self.widget)
+        self.mainLayout = QVBoxLayout()
+        self.mainLayout.setSpacing(10)
+        self.mainLayout.addWidget(self.inoutBox)
+        self.mainLayout.addWidget(self.measureBox)
+        self.mainLayout.addLayout(self.graphLayout)
+        self.mainLayout.addWidget(self.table)
+        self.widget.setLayout(self.mainLayout)
+
+        self.setWindowTitle("PSPlot")
+        self.resize(1000, 600)
+        self.setMinimumSize(600, 350)
+        self.center()
+
+        # Connect to the serial device (first, newest detected)
+        self.serialScan()
+        self.serialList.setCurrentIndex(0)
+        self.serialConnect(0)
+
+        # TODO update this to include all new widgets
+        self.twoDPlotWidget.setFocus()
+        self.widget.setTabOrder(self.twoDPlotWidget, self.serialList)
+
+    def _setupInOutUI(self):
         # selecting serial
         self.serialList = ComboBox()
         self.serialList.onPopup.connect(self.serialScan)
@@ -163,7 +253,7 @@ class PsPlot(QMainWindow):
         self.exportDataBtn = QPushButton("Export dataset to file")
         self.exportDataBtn.clicked.connect(self.exportCsv)
 
-        # serial horizonal layout
+        # serial horizontal layout
         self.horizontalSerialLayout = QHBoxLayout()
         self.horizontalSerialLayout.addWidget(self.serialList)
         self.horizontalSerialLayout.addWidget(self.serialNotif)
@@ -180,7 +270,7 @@ class PsPlot(QMainWindow):
         self.inoutBox = QGroupBox("data in/out")
         self.inoutBox.setLayout(self.inoutBoxLayout)
 
-        ## taking a measurement
+    def _setupMeasureUI(self):
         # calibration
         self.calibrateBtn = QPushButton("Calibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
@@ -245,14 +335,15 @@ class PsPlot(QMainWindow):
         self.measureBox = QGroupBox("measuring")
         self.measureBox.setLayout(self.measureBoxLayout)
 
-        ## 2d Plot
+    def _setupTwoDPlotUI(self):
+        """sets up both the twoDPlotWidget, and its layout"""
         self.twoDPlotWidget = pg.PlotWidget(background=None)
 
-        self.twoDPlotWidgetItem = self.twoDPlotWidget.getPlotItem()
-        self.twoDPlotWidgetItem.hideButtons()
-        self.twoDPlotWidgetItem.setMenuEnabled(False)
-        self.twoDPlotWidgetItem.showGrid(x=True, y=True, alpha=0.5)
-        self.twoDPlotWidgetItem.setMouseEnabled(x=False, y=True)
+        self.twoDPlotItem = self.twoDPlotWidget.getPlotItem()
+        self.twoDPlotItem.hideButtons()
+        self.twoDPlotItem.setMenuEnabled(False)
+        self.twoDPlotItem.showGrid(x=True, y=True, alpha=0.5)
+        self.twoDPlotItem.setMouseEnabled(x=False, y=True)
 
         self.pc = self.twoDPlotWidget.plot()
         self.pc.setSymbol("o")
@@ -261,17 +352,15 @@ class PsPlot(QMainWindow):
         self.yPadding = 0.015
         self.yMin = 0
         self.yMax = 1.1
-        self.twoDPlotWidgetItem.setLimits(
+        self.twoDPlotItem.setLimits(
             xMin=min(self.wavelengths) - self.xPadding,
             xMax=max(self.wavelengths) + self.xPadding,
             yMin=0 - self.yPadding,
         )
-        self.twoDPlotWidgetItem.setLabel(
-            "left", "NIR output", units="V", unitPrefix="m"
-        )
-        self.twoDPlotWidgetItem.setLabel("bottom", "Wavelength (nm)")
-        self.twoDPlotWidgetItem.getAxis("bottom").enableAutoSIPrefix(False)
-        self.twoDPlotWidgetItem.setTitle("Reflectance")
+        self.twoDPlotItem.setLabel("left", "NIR output", units="V", unitPrefix="m")
+        self.twoDPlotItem.setLabel("bottom", "Wavelength (nm)")
+        self.twoDPlotItem.getAxis("bottom").enableAutoSIPrefix(False)
+        self.twoDPlotItem.setTitle("Reflectance")
 
         self.twoDPlotWidget.setXRange(
             self.wavelengths[0], self.wavelengths[-1], padding=0.1
@@ -313,11 +402,11 @@ class PsPlot(QMainWindow):
         self.twoDPlotLayout.addWidget(self.twoDPlotWidget, 80)
         self.twoDPlotLayout.addLayout(self.twoDPlotControlLayout, 20)
 
-        ## 3d plot
+    def _setupThreeDPlotUI(self):
         self.threeDdata: Dict[Tuple[int], list[QScatterDataItem]] = dict()
         self.threeDdata_colors = []
         self.threeDgraph = Q3DScatter()
-        self.threeDgraph_container = QWidget.createWindowContainer(self.threeDgraph)
+        self.threeDPlotWidget = QWidget.createWindowContainer(self.threeDgraph)
 
         self.threeDgraph.setOrthoProjection(True)
         self.threeDgraph.scene().activeCamera().setCameraPreset(
@@ -354,47 +443,64 @@ class PsPlot(QMainWindow):
         self.scatter_proxy = QScatterDataProxy()
         self.scatter_proxy2 = QScatterDataProxy()
 
-        # layout for graphs
-        self.graphLayout = QHBoxLayout()
-        self.graphLayout.setSpacing(10)
-        self.graphLayout.addLayout(self.twoDPlotLayout, 50)
-        self.graphLayout.addWidget(self.threeDgraph_container, 50)
+        self.threeDClearPlotBtn = QPushButton("Clear graph")
+        # self.threeDClearPlotBtn.clicked.connect()
+        self.threeDExportPlotBtn = QPushButton("Export graph")
+        # self.threeDExportPlotBtn.clicked.connect()
 
-        ## Table to display output
-        self.tableHeader = ["name", "material"] + [str(x) for x in self.wavelengths]
-        self.table = Table()
-        self.table.setColumnCount(len(self.tableHeader))
-        self.table.setHorizontalHeaderLabels(self.tableHeader)
-        self.table.itemChanged.connect(self.tableChanged)
-        # make the first 2 columns extra wide
-        self.table.setColumnWidth(0, 200)
-        self.table.setColumnWidth(1, 200)
+        self.threeDPlotControlLayout = QHBoxLayout()
+        self.threeDPlotControlLayout.addWidget(self.threeDClearPlotBtn)
+        self.threeDPlotControlLayout.addWidget(self.threeDExportPlotBtn)
+        self.threeDPlotControlLayout.setSpacing(0)
 
-        ## add all layouts to mainLayout
-        # Container widget
-        self.widget = QWidget(self)
-        self.setCentralWidget(self.widget)
-        self.mainLayout = QVBoxLayout()
-        self.mainLayout.setSpacing(10)
-        self.mainLayout.addWidget(self.inoutBox)
-        self.mainLayout.addWidget(self.measureBox)
-        self.mainLayout.addLayout(self.graphLayout)
-        self.mainLayout.addWidget(self.table)
-        self.widget.setLayout(self.mainLayout)
+        self.threeDPlotLayout = QVBoxLayout()
+        self.threeDPlotLayout.addWidget(self.threeDPlotWidget, 80)
+        self.threeDPlotLayout.addLayout(self.threeDPlotControlLayout, 20)
 
-        self.setWindowTitle("PSPlot")
-        self.resize(1000, 600)
-        self.setMinimumSize(600, 350)
-        self.center()
+    def _setupHistogramUI(self):
+        self.histogramPlotWidget = pg.PlotWidget(background=None)
+        # self.histogramPlotItem = self.twoDPlotWidget.getPlotItem()
+        self.histogramPlotWidget.hideButtons()
+        self.histogramPlotWidget.setMenuEnabled(False)
+        self.histogramPlotWidget.setMouseEnabled(x=False, y=False)
+        self.histogramPlotWidget.setLimits(
+            xMin=0,
+            xMax=100,
+            yMin=0,
+        )
+        self.histogramPlotWidget.setXRange(0, 100)
 
-        # Connect to the serial device (first, newest detected)
-        self.serialScan()
-        self.serialList.setCurrentIndex(0)
-        self.serialConnect(0)
+        # TODO replace this
+        vertical_axis = {
+            idx: name for idx, name in enumerate(self.sample_materials, start=1)
+        }
 
-        # TODO update this to include all new widgets
-        self.twoDPlotWidget.setFocus()
-        self.widget.setTabOrder(self.twoDPlotWidget, self.serialList)
+        axis = self.histogramPlotWidget.getAxis("left")
+        axis.setTicks([vertical_axis.items()])
+        axis = self.histogramPlotWidget.getAxis("bottom")
+        axis.setTicks([{x: str(x) for x in range(0, 120, 20)}.items()])
+        fakedata = {
+            name: value
+            for name, value in zip(
+                self.sample_materials,
+                list(np.random.randint(0, 100, size=len(self.sample_materials))),
+            )
+        }
+        self.plotHistogram(fakedata)
+
+        self.histogramClearPlotBtn = QPushButton("Clear graph")
+        # self.threeDClearPlotBtn.clicked.connect()
+        self.histogramExportPlotBtn = QPushButton("Export graph")
+        # self.threeDExportPlotBtn.clicked.connect()
+
+        self.histogramPlotControlLayout = QHBoxLayout()
+        self.histogramPlotControlLayout.addWidget(self.histogramClearPlotBtn)
+        self.histogramPlotControlLayout.addWidget(self.histogramExportPlotBtn)
+        self.histogramPlotControlLayout.setSpacing(0)
+
+        self.histogramPlotLayout = QVBoxLayout()
+        self.histogramPlotLayout.addWidget(self.histogramPlotWidget, 80)
+        self.histogramPlotLayout.addLayout(self.histogramPlotControlLayout, 20)
 
     def serialScan(self) -> None:
         """Scans for available serial devices and updates the list"""
@@ -443,7 +549,7 @@ class PsPlot(QMainWindow):
         # TODO make it so that this also corrects for baseline
         if len(self.old_data) > 0 or self.baseline is not None:
             # when coming from self.plot checking if it is checked is now done twice
-            self.twoDPlotWidgetItem.getViewBox().autoRange()
+            self.twoDPlotItem.getViewBox().autoRange()
             all_plotted_data = [x for y in self.old_data for x in y]
             if self.baseline is not None:
                 all_plotted_data.extend(self.baseline)
@@ -504,20 +610,20 @@ class PsPlot(QMainWindow):
             or e.key() == Qt.Key.Key_W
             or e.key() == Qt.Key.Key_Plus
         ):
-            self.twoDPlotWidgetItem.getViewBox().scaleBy((1, 0.9))
+            self.twoDPlotItem.getViewBox().scaleBy((1, 0.9))
 
         elif (
             e.key() == Qt.Key.Key_Down
             or e.key() == Qt.Key.Key_S
             or e.key() == Qt.Key.Key_Minus
         ):
-            self.twoDPlotWidgetItem.getViewBox().scaleBy((1, 1.1))
+            self.twoDPlotItem.getViewBox().scaleBy((1, 1.1))
 
         elif e.key() == Qt.Key.Key_Left or e.key() == Qt.Key.Key_A:
-            self.twoDPlotWidgetItem.getViewBox().translateBy((-10, 0))
+            self.twoDPlotItem.getViewBox().translateBy((-10, 0))
 
         elif e.key() == Qt.Key.Key_Right or e.key() == Qt.Key.Key_D:
-            self.twoDPlotWidgetItem.getViewBox().translateBy((+10, 0))
+            self.twoDPlotItem.getViewBox().translateBy((+10, 0))
 
         elif e.key() == Qt.Key.Key_Home:
             self.twoDPlotWidget.setXRange(
@@ -527,6 +633,13 @@ class PsPlot(QMainWindow):
 
         elif e.key() == Qt.Key.Key_Space:
             self.takeRegularMeasurement()
+        elif e.key() == Qt.Key.Key_F11:
+            if not self.fullscreen:
+                self.windowHandle().showFullScreen()
+                self.fullscreen = True
+            else:
+                self.windowHandle().showNormal()
+                self.fullscreen = False
 
     def takeRegularMeasurement(self):
         if (
@@ -547,7 +660,7 @@ class PsPlot(QMainWindow):
 
         data = self.getMeasurement()
         self.addMeasurement(data)
-        self.plot(data)
+        self.plotTwoD(data)
         self.threeD([data[1], data[4], data[6]])
 
     def addCalibrationMeasurement(self, data: List[float]) -> None:
@@ -678,11 +791,11 @@ class PsPlot(QMainWindow):
             self.addCalibrationMeasurement(self.baseline)
             self.old_data.clear()
 
-        self.plot()
+        self.plotTwoD()
 
     def clearCalibration(self) -> None:
         self.baseline = None
-        self.plot(self.old_data[-1])
+        self.plotTwoD(self.old_data[-1])
 
     def listToString(self, data: List[float]) -> str:
         return " ".join([f"{i:.7f}" for i in data])
@@ -703,7 +816,17 @@ class PsPlot(QMainWindow):
         if name not in self.sample_materials:
             self.sample_materials.add(name)
 
-    def plot(self, data: Optional[List[float]] = None) -> None:
+    def plotTwoD(self, data: Optional[List[float]] = None) -> None:
+        # TODO remove this block:
+        fakedata = {
+            name: value
+            for name, value in zip(
+                self.sample_materials,
+                list(np.random.randint(0, 100, size=len(self.sample_materials))),
+            )
+        }
+        self.plotHistogram(fakedata)
+
         self.twoDPlotWidget.clear()
         self.baseline = np.array(self.baseline)
 
@@ -746,6 +869,34 @@ class PsPlot(QMainWindow):
             self.restoreAxisPlot()
         if self.twoDAxisAutoRangeChbx.isChecked():
             self.centerAxisPlot()
+
+    def plotHistogram(self, data: Dict[str, int]) -> None:
+        self.histogramPlotWidget.clear()
+        yticks = list(range(1, len(data) + 1))
+        widths = list(data.values())
+        self.histogramPlotWidget.setYRange(0, len(data) + 0.5)
+        self.bars = pg.BarGraphItem(
+            x0=0,
+            y=yticks,
+            height=0.8,
+            width=widths,
+        )
+        self.bars.setOpts(
+            brushes=[
+                QColor(self.palette().highlight().color()) for _ in range(len(data))
+            ]
+        )
+        self.histogramPlotWidget.addItem(self.bars)
+        # draw the text for each bar
+        for x, y in zip(widths, yticks):
+            if x >= 50:
+                text = pg.TextItem(str(x), anchor=(1, 0.5))
+                text.setPos(x, y)
+            else:
+                text = pg.TextItem(str(x), anchor=(0, 0.5))
+                text.setPos(x, y)
+
+            self.histogramPlotWidget.addItem(text)
 
     def loadDatasetOnline(self):
         QMessageBox.information(
@@ -845,12 +996,19 @@ class PsPlot(QMainWindow):
         color: Tuple[int] = (125, 125, 125),
         name: str = "",
     ) -> None:
+        """
+        Plan of attack
+        - per kleur is er één proxy nodig, een proxy houd series vast
+        """
         if len(color) != 3 or len(data) != 3:
             raise ValueError("argument may only contain 3 items")
 
         self.ctr += 1
-        color = [(255, 0, 0), (0, 255, 0)][self.ctr % 2]
-        name = ["red", "green"][self.ctr % 2]
+        # color = [(255, 0, 0), (0, 255, 0)][self.ctr % 2]
+        # name = ["red", "green"][self.ctr % 2]
+        name = list(self.sample_materials)[self.ctr % 7]
+        color = list(self.sample_materials)[self.ctr % 7]
+        color2 = self.color_tableau[np.random.randint(0, len(self.color_tableau))]
 
         if color not in self.threeDdata:
             self.threeDdata[color] = []
@@ -858,13 +1016,15 @@ class PsPlot(QMainWindow):
             self.threeDdata_colors.append(color)
             # add a series and make it the correct color
             if self.ctr % 2:
-                series = QScatter3DSeries(self.scatter_proxy)
+                # series = QScatter3DSeries(self.scatter_proxy)
+                series = QScatter3DSeries()
             else:
-                series = QScatter3DSeries(self.scatter_proxy2)
+                # series = QScatter3DSeries(self.scatter_proxy2)
+                series = QScatter3DSeries()
             series.setName(name)
             series.setItemLabelFormat("@xLabel | @yLabel | @zLabel | @seriesName")
             series.setMeshSmooth(True)
-            series.setBaseColor(QColor(*color))
+            series.setBaseColor(color2)
             self.threeDgraph.addSeries(series)
 
         self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
@@ -872,6 +1032,7 @@ class PsPlot(QMainWindow):
         #  self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
 
         for idx, currcolor in enumerate(self.threeDdata_colors):
+            print(f"{idx}")
             #  print(f"{currcolor=}")
             self.threeDgraph.seriesList()[idx].dataProxy().resetArray(
                 self.threeDdata[currcolor]
