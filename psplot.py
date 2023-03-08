@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# TODO check if Anti aliassing is on everywhere (including in the plots etc)
 
 from threading import currentThread
 from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
@@ -527,11 +528,13 @@ class PsPlot(QMainWindow):
         ## legend
         self.threeDPlotLegendLayout = QHBoxLayout()
         back = QColor(self.palette().window().color()).getRgb()
+        self.threeDPlotLegendButtons = {}
         for name, color in self.threeDPlotColormap.items():
             label = QLabel()
             button = QPushButton(name)
             button.setCheckable(True)
             button.setChecked(True)
+            button.clicked.connect(self.plotThreeD)
             rgb = color.getRgb()
             button.setStyleSheet(
                 """
@@ -561,6 +564,7 @@ class PsPlot(QMainWindow):
             )
             # self.threeDPlotLegendLayout.addWidget(label)
             self.threeDPlotLegendLayout.addWidget(button)
+            self.threeDPlotLegendButtons[name] = button
 
         ## buttons
         self.threeDAX1Selection = QComboBox()
@@ -1169,17 +1173,20 @@ class PsPlot(QMainWindow):
                     proxy = self.threeDUniqueSeries[material][id]["proxy"]
                     series = self.threeDUniqueSeries[material][id]["series"]
 
-                dataArray = [
-                    QScatterDataItem(
-                        QVector3D(
-                            data[1],
-                            data[4],
-                            data[6],
+                if self.threeDPlotLegendButtons[material].isChecked():
+                    dataArray = [
+                        QScatterDataItem(
+                            QVector3D(
+                                data[1],
+                                data[4],
+                                data[6],
+                            )
                         )
-                    )
-                    for data in self.threeDUniqueSeries[material][id]["data"]
-                ]
-                proxy.resetArray(dataArray)
+                        for data in self.threeDUniqueSeries[material][id]["data"]
+                    ]
+                    proxy.resetArray(dataArray)
+                else:
+                    proxy.resetArray([QScatterDataItem()])
 
         # self.m_graph.seriesList()[0].dataProxy().resetArray(dataArray)
 
