@@ -13,6 +13,7 @@ pyqtgraph = "*"
 PyQtDataVisualization = "*"
 matplotlib = "*"
 pandas = "*"
+joblib = "*"
 
 [dev-packages]
 
