@@ -1,34 +1,22 @@
 #!/usr/bin/env python
-# TODO check if Anti aliassing is on everywhere (including in the plots etc)
 
-from threading import currentThread
 from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
 from PyQt5.QtGui import (
-    QBrush,
     QColor,
     QIcon,
     QKeyEvent,
-    QKeySequence,
-    QPalette,
-    QPen,
     QVector3D,
-    QWindow,
 )
 from PyQt5.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QComboBox,
-    QCompleter,
     QCheckBox,
-    QDockWidget,
+    QComboBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QLineEdit,
-    QListWidget,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -36,35 +24,33 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 from PyQt5.QtDataVisualization import (
     Q3DCamera,
-    Q3DTheme,
     Q3DScatter,
+    Q3DTheme,
     QAbstract3DGraph,
-    QAbstract3DSeries,
     QScatter3DSeries,
     QScatterDataItem,
     QScatterDataProxy,
 )
-import csv
 from collections import deque
+from datetime import datetime
+from numpy.typing import ArrayLike
+from typing import List, Optional, Tuple, Dict, Union
+import joblib
 import numpy as np
+import os
 import pandas as pd
 
 # pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
-import os
 import random
 import serial
 import serial.tools.list_ports
-import sys
 import time
-from typing import List, Optional, Tuple, Dict, Union, Callable
-from numpy.typing import ArrayLike
 
 
 class ComboBox(QComboBox):
@@ -107,19 +93,25 @@ class Table(QTableWidget):
 
 
 def normalize(
-    input_data, calibration_data: Union[List[float], ArrayLike]
+    input_data: List[float],
+    calibration_data: Union[List[float], ArrayLike],
 ) -> List[float]:
+    """normalizes by dividing by `calibration_data` and also applies SNV_transform"""
     input_data = np.asarray(input_data)
     calibration_data = np.asarray(calibration_data)
 
     # scale by calibration measurement
     data_rescaled = input_data / calibration_data
 
-    # the following is an SNV tranform
-    # Subtract the mean and divide by the standarddiviation
-    data_snv = (data_rescaled - np.mean(calibration_data)) / np.std(calibration_data)
+    data_snv = SNV_transform(data_rescaled)
 
     return list(data_snv)
+
+
+def SNV_transform(data: Union[ArrayLike, List[float]]) -> List[float]:
+    # the following is an SNV tranform
+    # Subtract the mean and divide by the standarddiviation
+    return list((np.asarray(data) - np.mean(data)) / np.std(data))
 
 
 def list_to_string(data: List[float]) -> str:
@@ -157,20 +149,67 @@ class PsPlot(QMainWindow):
         self.serial = None
         self.datasetloaded = None
 
+        # the names of the columns of the table
         self.table_header = ["name", "material", "color"] + [
             str(x) for x in self.wavelengths
         ]
-        self.df_header = [
-            "Reading",
-            "Name",
-            "PlasticType",
-            "Color",
-            "MeasurementType",
-        ] + [f"nm{x}" for x in self.wavelengths]
+        # the measurement columns of the dataframe that are represented in the table
+        self.table_used_dataframe_headers = [f"nm{x}" for x in self.wavelengths]
+
+        # the headers for the dataframe:
+        # |  Reading                |   the how many'th measurement                   |
+        # |  Name                   |   name or id of the piece                       |
+        # |  PlasticType            |   type of the plastic                           |
+        # |  Color                  |   physical color of the piece of plastic        |
+        # |  MeasurementType        |   if the measurement was a calibration or not   | options: regular, calibration
+        # |  nm<wavelengths>        |   measured signal per wavelength                |
+        # |  nm<wavelengths>_norm   |   signal per wavelength after normalization     |
+        self.df_header = (
+            [
+                "Name",
+                "PlasticType",
+                "Color",
+                "MeasurementType",
+                "DateTime",
+            ]
+            + [f"nm{x}" for x in self.wavelengths]
+            + [f"nm{x}_snv" for x in self.wavelengths]
+            + [f"nm{x}_norm" for x in self.wavelengths]
+        )
+        self.df_header_dtypes = (
+            {
+                "Name": str,
+                "PlasticType": str,
+                "Color": str,
+                "MeasurementType": str,
+                "DateTime": str,
+            }
+            | {f"nm{x}": float for x in self.wavelengths}
+            | {f"nm{x}_snv": float for x in self.wavelengths}
+            | {f"nm{x}_norm": float for x in self.wavelengths}
+        )
         self.df = pd.DataFrame(columns=self.df_header)
 
+        self.prediction_options = [f"nm{x}" for x in self.wavelengths]
+        self.clf = joblib.load("model.joblib")
+
+        self.threeDAxisOptions = (
+            [f"nm{x}" for x in self.wavelengths]
+            + [f"nm{x}_snv" for x in self.wavelengths]
+            + [f"nm{x}_norm" for x in self.wavelengths]
+        )
+        self.threeDAxisOptionsIndexMap = {
+            name: index for index, name in enumerate(self.threeDAxisOptions)
+        }
+        self.threeDAxisVarXDefault = "nm1050_norm"
+        self.threeDAxisVarYDefualt = "nm1450_norm"
+        self.threeDAxisVarZDefault = "nm1650_norm"
+        self.threeDAxisVarX = self.threeDAxisVarXDefault
+        self.threeDAxisVarY = self.threeDAxisVarYDefualt
+        self.threeDAxisVarZ = self.threeDAxisVarZDefault
+
         # keeps track of all of the samples that have been measured
-        self.sample_materials = [
+        self.default_sample_materials = [
             "PP",
             "PET",
             "PS",
@@ -180,27 +219,31 @@ class PsPlot(QMainWindow):
             "spectralon",
             "unknown",
         ]
+        self.sample_materials = self.default_sample_materials.copy()
 
         # holds the calibration measurement
         self.baseline = None
 
         self.sample_colors = {""}
-        self.sample_labels = {""}
+        self.sample_names = {""}
 
-        self.ctr = 0
         self.overwrite_no_callibration_warning = False
         self.fullscreen = False
         # true when self.storeMeasurement is active
         self.currently_storing = False
+        # true when self.plotTwoD is active
+        self.currently_plotting = False
 
         # used for also plotting previouse values
-        self.twoDPlotDeque = deque(maxlen=3)
+        self.twoDPlotHistoryDeque = deque(maxlen=3)
         # all the values that were last plotted
         self.twoDPlottedList = []
-        # to keep track of the amount of calibrations done
-        self.calibration_counter = 0
-        # holds labers for each row
-        self.row_labels = []
+        # to keep track of the amount of calibrations done in the current session
+        self.current_calibration_counter = 0
+        # the amount of calibrations done in the current session + the previouse sessions
+        self.total_calibration_counter = 0
+        # holds labels for each row of the table, calibration rows are labeled differently
+        self.tableRowLabels = []
         # colorblind friendly colors taken and adjusted from https://projects.susielu.com/viz-palette
         # ["#ffd700", "#ffb14e", "#fa8775", "#ea5f94", "#cd34b5", "#9d02d7", "#0000ff", "#2194F9"]
         self.color_tableau = (
@@ -213,7 +256,7 @@ class PsPlot(QMainWindow):
             QColor(33, 148, 249),
             QColor(0, 0, 255),
         )
-        self.threeDPlotAllowedLabels = [
+        self.threeDPlotAllowedMaterials = [
             "PP",
             "PET",
             "PS",
@@ -224,7 +267,11 @@ class PsPlot(QMainWindow):
             "unknown",
         ]
         self.threeDPlotColormap = {
-            x: y for x, y in zip(self.threeDPlotAllowedLabels, self.color_tableau)
+            x: y
+            for x, y in zip(
+                self.threeDPlotAllowedMaterials,
+                self.color_tableau,
+            )
         }
 
         ## setting up the UI elements
@@ -274,7 +321,7 @@ class PsPlot(QMainWindow):
         # Connect to the serial device (first, newest detected)
         self.serialScan()
         self.serialList.setCurrentIndex(0)
-        self.serialConnect(0)
+        self.serialConnect()
 
         # TODO update this to include all new widgets
         self.twoDPlotWidget.setFocus()
@@ -348,9 +395,9 @@ class PsPlot(QMainWindow):
         self.sampleMaterialSelection = QComboBox()
         self.sampleMaterialSelection.setDuplicatesEnabled(False)
         self.sampleMaterialSelection.setEditable(True)
-        self.sampleMaterialSelection.currentIndexChanged.connect(
-            self.sampleMaterialSelectionChanged
-        )
+        # self.sampleMaterialSelection.currentIndexChanged.connect(
+        #     self.sampleMaterialSelectionChanged
+        # )
         self.sampleMaterialSelection.setPlaceholderText("select material")
         self.sampleMaterialSelection.addItems(sorted(self.sample_materials))
         self.sampleMaterialSelection.setCurrentText("unknown")
@@ -363,9 +410,9 @@ class PsPlot(QMainWindow):
         self.sampleNameSelection.setDuplicatesEnabled(False)
         self.sampleNameSelection.setEditable(True)
         self.sampleNameSelection.addItem("")
-        self.sampleNameSelection.currentIndexChanged.connect(
-            self.sampleNameSelectionChanged
-        )
+        # self.sampleNameSelection.currentIndexChanged.connect(
+        #     self.sampleNameSelectionChanged
+        # )
         self.sampleNameSelection.setPlaceholderText("select sample name")
 
         # sample color
@@ -376,9 +423,9 @@ class PsPlot(QMainWindow):
         self.sampleColorSelection.setDuplicatesEnabled(False)
         self.sampleColorSelection.setEditable(True)
         self.sampleColorSelection.addItem("")
-        self.sampleColorSelection.currentIndexChanged.connect(
-            self.sampleColorSelectionChanged
-        )
+        # self.sampleColorSelection.currentIndexChanged.connect(
+        #     self.sampleColorSelectionChanged
+        # )
         self.sampleColorSelection.setPlaceholderText("select sample name")
 
         self.calibrationLayout = QHBoxLayout()
@@ -443,7 +490,7 @@ class PsPlot(QMainWindow):
 
         # Buttons for 2d plot
         self.twoDAxisAutoRangeChbx = QCheckBox("Auto range")
-        self.twoDAxisAutoRangeChbx.clicked.connect(self.TwoDPlotAutoRangeChbxClick)
+        self.twoDAxisAutoRangeChbx.clicked.connect(self.twoDPlotAutoRangeChbxClick)
         self.twoDAxisAutoRangeChbx.setChecked(True)
         self.twoDPlotViewbox.sigRangeChanged.connect(self.twoDPlotRangeChanged)
 
@@ -469,7 +516,7 @@ class PsPlot(QMainWindow):
         # uses key material = unknown when material field is ""
         # {
         #     material: {
-        #         id: {
+        #         id/name: {
         #             "data": [data1, data2],
         #             "proxy": proxy,
         #             "series": series,
@@ -477,8 +524,7 @@ class PsPlot(QMainWindow):
         #     }
         # }
         self.threeDUniqueSeries = {
-            material: {"1": {"data": [[1, 2, 3, 4, 5, 6, 7]]}}
-            for material in self.threeDPlotAllowedLabels
+            material: {} for material in self.threeDPlotAllowedMaterials
         }
 
         self.threeDdata: Dict[Tuple[int], list[QScatterDataItem]] = dict()
@@ -490,13 +536,13 @@ class PsPlot(QMainWindow):
         self.threeDgraph.scene().activeCamera().setCameraPreset(
             Q3DCamera.CameraPresetIsometricLeft
         )
-        self.threeDgraph.axisX().setTitle("1050 nm")
+        self.threeDgraph.axisX().setTitle(self.threeDAxisVarXDefault)
         self.threeDgraph.axisX().setTitleVisible(True)
         self.threeDgraph.axisX().setLabelFormat("%.4f")
-        self.threeDgraph.axisY().setTitle("1450 nm")
+        self.threeDgraph.axisY().setTitle(self.threeDAxisVarYDefualt)
         self.threeDgraph.axisY().setTitleVisible(True)
         self.threeDgraph.axisY().setLabelFormat("%.4f")
-        self.threeDgraph.axisZ().setTitle("1650 nm")
+        self.threeDgraph.axisZ().setTitle(self.threeDAxisVarZDefault)
         self.threeDgraph.axisZ().setTitleVisible(True)
         self.threeDgraph.axisZ().setLabelFormat("%.4f")
 
@@ -509,8 +555,8 @@ class PsPlot(QMainWindow):
         currentTheme.setLabelBackgroundEnabled(False)
         currentTheme.setLabelTextColor(QColor(self.palette().text().color()))
         currentTheme.setAmbientLightStrength(1)
-        currentTheme.setLightStrength(0)
-        currentTheme.setHighlightLightStrength(0.5)
+        currentTheme.setLightStrength(1)
+        currentTheme.setHighlightLightStrength(1)
         currentTheme.setColorStyle(Q3DTheme.ColorStyleUniform)
         currentTheme.setGridEnabled(True)
         back = QColor(self.palette().window().color())
@@ -521,13 +567,9 @@ class PsPlot(QMainWindow):
         font.setPointSizeF(4 * fontsize)
         currentTheme.setFont(font)
 
-        # holds all of the scatterdataseries
-        # self.scatter_proxy = QScatterDataProxy()
-        # self.scatter_proxy2 = QScatterDataProxy()
-
         ## legend
         self.threeDPlotLegendLayout = QHBoxLayout()
-        back = QColor(self.palette().window().color()).getRgb()
+        back = self.palette().window().color().getRgb()
         self.threeDPlotLegendButtons = {}
         for name, color in self.threeDPlotColormap.items():
             label = QLabel()
@@ -567,20 +609,30 @@ class PsPlot(QMainWindow):
             self.threeDPlotLegendButtons[name] = button
 
         ## buttons
-        self.threeDAX1Selection = QComboBox()
-        self.threeDAX2Selection = QComboBox()
-        self.threeDAX3Selection = QComboBox()
+        self.threeDAxXSelection = QComboBox()
+        self.threeDAxXSelection.addItems(self.threeDAxisOptions)
+        self.threeDAxXSelection.setCurrentText(self.threeDAxisVarXDefault)
+        self.threeDAxXSelection.currentTextChanged.connect(self.threeDAxXChanged)
+        self.threeDAxYSelection = QComboBox()
+        self.threeDAxYSelection.addItems(self.threeDAxisOptions)
+        self.threeDAxYSelection.setCurrentText(self.threeDAxisVarYDefualt)
+        self.threeDAxYSelection.currentTextChanged.connect(self.threeDAxYChanged)
+        self.threeDAxZSelection = QComboBox()
+        self.threeDAxZSelection.addItems(self.threeDAxisOptions)
+        self.threeDAxZSelection.setCurrentText(self.threeDAxisVarZDefault)
+        self.threeDAxZSelection.currentTextChanged.connect(self.threeDAxZChanged)
 
         self.threeDDefaultAxesBtn = QPushButton("Default axes")
+        self.threeDDefaultAxesBtn.clicked.connect(self.threeDDefaultAxes)
         self.threeDClearPlotBtn = QPushButton("Clear graph")
-        # self.threeDClearPlotBtn.clicked.connect()
+        self.threeDClearPlotBtn.clicked.connect(self.threeDPlotClear)
         self.threeDExportPlotBtn = QPushButton("Export graph")
         # self.threeDExportPlotBtn.clicked.connect()
 
         self.threeDPlotControlLayout = QGridLayout()
-        self.threeDPlotControlLayout.addWidget(self.threeDAX1Selection, 0, 0)
-        self.threeDPlotControlLayout.addWidget(self.threeDAX2Selection, 0, 1)
-        self.threeDPlotControlLayout.addWidget(self.threeDAX3Selection, 0, 2)
+        self.threeDPlotControlLayout.addWidget(self.threeDAxXSelection, 0, 0)
+        self.threeDPlotControlLayout.addWidget(self.threeDAxYSelection, 0, 1)
+        self.threeDPlotControlLayout.addWidget(self.threeDAxZSelection, 0, 2)
         self.threeDPlotControlLayout.addWidget(self.threeDDefaultAxesBtn, 1, 0)
         self.threeDPlotControlLayout.addWidget(self.threeDClearPlotBtn, 1, 1)
         self.threeDPlotControlLayout.addWidget(self.threeDExportPlotBtn, 1, 2)
@@ -605,18 +657,20 @@ class PsPlot(QMainWindow):
         )
         self.histogramPlotWidget.setXRange(0, 100)
 
-        # TODO replace this
+        # the labels for the vertical axis, they are flipped because
+        # humans read from top to bottom
         vertical_axis = {
-            idx: name for idx, name in enumerate(self.trained_labels[::-1], start=1)
+            idx: name for idx, name in enumerate(self.clf.classes_[::-1], start=1)
         }
 
         axis = self.histogramPlotWidget.getAxis("left")
         axis.setTicks([vertical_axis.items()])
         axis.setStyle(tickLength=0)
+
         axis = self.histogramPlotWidget.getAxis("bottom")
         axis.setTicks([{x: str(x) for x in range(0, 120, 20)}.items()])
-        fakedata = {name: 0 for name in self.trained_labels}
-        self.plotHistogram(fakedata)
+
+        self.plotHistogram(initialize=True)
 
         self.histogramSortBtnGroup = QButtonGroup()
         self.histogramSortDefaultBtn = QRadioButton("sort default")
@@ -649,7 +703,7 @@ class PsPlot(QMainWindow):
         for dev in list(serial.tools.list_ports.comports()):
             self.serialList.insertItem(0, dev.device)
 
-    def serialConnect(self, index: int) -> None:
+    def serialConnect(self) -> None:
         """Connects to the serial device (e.g. /dev/ttyACM0)"""
 
         if self.serial is not None:
@@ -667,7 +721,7 @@ class PsPlot(QMainWindow):
             print(f"Cannot open serial port '{port}', using dummy data")
             self.serial = None
             self.serialNotif.setText("Using dummy data")
-        except Exception as e:
+        except Exception:
             print(f"Can't open serial port '{port}', using dummy data")
             self.serial = None
             self.serialNotif.setText("Using dummy data")
@@ -679,23 +733,26 @@ class PsPlot(QMainWindow):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
-    def TwoDPlotAutoRangeChbxClick(self) -> None:
+    def twoDPlotAutoRangeChbxClick(self) -> None:
         self.twoDPlotWidget.setFocus()
-
         self.twoDPlotViewbox.enableAutoRange(
-            self.twoDPlotViewbox.YAxis, enable=self.twoDAxisAutoRangeChbx.isChecked()
+            self.twoDPlotViewbox.YAxis,
+            enable=self.twoDAxisAutoRangeChbx.isChecked(),
         )
-        # if self.twoDAxisAutoRangeChbx.isChecked():
-        #     self.centerAxisPlot()
 
     def twoDPlotRangeChanged(self):
-        self.twoDAxisAutoRangeChbx.setChecked(False)
+        # if the user moves the range of the plot, then turn off the checkbox
+        # if the range changed because of automatic rescaling that happened
+        # during plotting then do nothing
+        if not self.currently_plotting:
+            self.twoDAxisAutoRangeChbx.setChecked(False)
 
     def twoDPlotClear(self) -> None:
-        self.twoDPlotDeque.clear()
+        self.twoDPlotHistoryDeque.clear()
         self.twoDPlottedList.clear()
         self.twoDPlotWidget.clear()
-        self.axes.cla()
+        self.plotTwoD()
+        # self.twoDAxisAutoRangeChbx.setChecked(True)
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
         # if e.key() == Qt.Key.Key_Escape or e.key() == Qt.Key.Key_Q:
@@ -716,12 +773,6 @@ class PsPlot(QMainWindow):
         ):
             self.twoDPlotViewbox.scaleBy((1, 1.1))
 
-            # elif e.key() == Qt.Key.Key_Left or e.key() == Qt.Key.Key_A:
-            self.twoDPlotViewbox.translateBy((-10, 0))
-
-        elif e.key() == Qt.Key.Key_Right or e.key() == Qt.Key.Key_D:
-            self.twoDPlotViewbox.translateBy((+10, 0))
-
         elif e.key() == Qt.Key.Key_Home:
             self.twoDPlotWidget.setXRange(
                 self.wavelengths[0], self.wavelengths[-1], padding=0.1
@@ -740,7 +791,7 @@ class PsPlot(QMainWindow):
 
     def takeRegularMeasurement(self):
         if (
-            self.calibration_counter == 0
+            self.current_calibration_counter == 0
             and self.overwrite_no_callibration_warning == False
         ):
             button = QMessageBox.warning(
@@ -757,34 +808,28 @@ class PsPlot(QMainWindow):
 
         data = self.getMeasurement()
         self.addMeasurement(data)
-        self.plotTwoD(data)
+        self.plotTwoD(SNV_transform(data))
         self.plotThreeD()
+        self.plotHistogram()
         # self.plotThreeD([data[1], data[4], data[6]])
 
     def addMeasurement(self, data: List[float]) -> None:
-        name = self.sampleNameSelection.currentText()
-        if name not in self.sample_labels:
-            self.sample_labels.add(name)
-            self.sampleNameSelection.addItem(name)
-
-        material = self.sampleMaterialSelection.currentText()
+        material = self.sampleMaterialSelection.currentText().rstrip()
         if material not in self.sample_materials:
             self.sample_materials.append(material)
             self.sampleMaterialSelection.addItem(material)
 
-        color = self.sampleColorSelection.currentText()
+        name = self.sampleNameSelection.currentText().rstrip()
+        if name not in self.sample_names:
+            self.sample_names.add(name)
+            self.sampleNameSelection.addItem(name)
+
+        color = self.sampleColorSelection.currentText().rstrip()
         if color not in self.sample_colors:
             self.sample_colors.add(color)
             self.sampleColorSelection.addItem(color)
 
-        # use calibration if possible
-        if self.baseline is not None:
-            dataCalibrated = [dat / base for dat, base in zip(data, self.baseline)]
-            # data = dataCalibrated
-
         self.storeMeasurement(data, name=name, material=material, color=color)
-
-        self.twoDPlotDeque.append(data)
 
     def storeMeasurement(
         self,
@@ -795,14 +840,52 @@ class PsPlot(QMainWindow):
         calibrated_measurement: bool = False,
     ):
         """adds newest measurement to table and dataframe"""
+
+        data_snv = SNV_transform(data)
+
+        if calibrated_measurement:
+            data_normalized = [1] * len(data)
+        else:
+            if self.baseline != None:
+                data_normalized = normalize(data, self.baseline)
+            else:
+                data_normalized = [None] * len(data)
+
         self.currently_storing = True
-        self.addToTable(data, name, material, color, calibrated_measurement)
-        self.addToDataframe(data, name, material, color, calibrated_measurement)
+        self.addToDataframe(
+            data,
+            data_snv,
+            data_normalized,
+            name,
+            material,
+            color,
+            calibrated_measurement,
+        )
+        self.addToTable(
+            data,
+            name,
+            material,
+            color,
+            calibrated_measurement,
+        )
+
+        if not calibrated_measurement:
+            if material not in self.threeDUniqueSeries:
+                self.threeDUniqueSeries[material] = {}
+            if name not in self.threeDUniqueSeries[material]:
+                self.threeDUniqueSeries[material][name] = {"data": []}
+
+            self.threeDUniqueSeries[material][name]["data"].append(
+                data + data_snv + data_normalized
+            )
+
         self.currently_storing = False
 
     def addToDataframe(
         self,
         data: List[float],
+        data_snv: List[float],
+        data_normalized: List[Union[float, None]],
         name: str = "",
         material: str = "unknown",
         color: str = "",
@@ -814,12 +897,14 @@ class PsPlot(QMainWindow):
             measurement_type = "regular"
 
         self.df.loc[len(self.df)] = [
-            len(self.df) + 1,
             name,
             material,
             color,
             measurement_type,
+            datetime.now(),
             *data,
+            *data_snv,
+            *data_normalized,
         ]
 
     def addToTable(
@@ -842,11 +927,11 @@ class PsPlot(QMainWindow):
         self.table.setItem(nRows, 2, QTableWidgetItem(color))
 
         if calibrated_measurement:
-            self.row_labels.append(f"c {self.calibration_counter}")
+            self.tableRowLabels.append(f"c {self.total_calibration_counter}")
             self.table.setItem(nRows, 1, QTableWidgetItem("spectralon"))
         else:
-            self.row_labels.append(str(nRows + 1 - self.calibration_counter))
-        self.table.setVerticalHeaderLabels(self.row_labels)
+            self.tableRowLabels.append(str(nRows + 1 - self.total_calibration_counter))
+        self.table.setVerticalHeaderLabels(self.tableRowLabels)
 
         # add value for every column of new row
         dataStr = list_to_string(data)
@@ -902,31 +987,33 @@ class PsPlot(QMainWindow):
 
         if button == QMessageBox.StandardButton.Yes:
             # if this is the first calibration, enable certain buttons
-            if self.calibration_counter == 0:
+            if self.current_calibration_counter == 0:
                 self.clearCalibrationBtn.setEnabled(True)
                 self.regularMeasurementBtn.setEnabled(True)
                 self.regularMeasurementBtn.setToolTip("")
 
             self.baseline = self.getMeasurement()
-            self.calibration_counter += 1
+            self.current_calibration_counter += 1
+            self.total_calibration_counter += 1
             self.storeMeasurement(self.baseline, calibrated_measurement=True)
 
             # after a calibration calibration the plot is cleared
-            self.twoDPlotDeque.clear()
+            self.twoDPlotHistoryDeque.clear()
             self.plotTwoD()
 
     def clearCalibration(self) -> None:
         self.baseline = None
         # after a calibration calibration the plot is cleared
-        self.twoDPlotDeque.clear()
+        self.twoDPlotHistoryDeque.clear()
+        self.twoDPlottedList.clear()
         self.twoDPlotWidget.clear()
 
     def tableChanged(self, item):
         # if it was a label that changed, add it to the list of labels
         if item.column() == 0:
             name = item.text()
-            if name not in self.sample_labels:
-                self.sample_labels.add(name)
+            if name not in self.sample_names:
+                self.sample_names.add(name)
                 self.sampleNameSelection.addItem(name)
         # if it was a material that changed, add it to the list of materials
         elif item.column() == 1:
@@ -937,47 +1024,26 @@ class PsPlot(QMainWindow):
 
         # also update the change in the dataframe
         if not self.currently_storing:
-            # the +1 is to compensate for the "reading" column that is present
-            # in the dataframe but not in the table
-            self.df.loc[item.row(), self.df_header[item.column() + 1]] = item.text()
-
-    def sampleNameSelectionChanged(self, idx):
-        name = self.sampleNameSelection.itemText(idx)
-        if name not in self.sample_labels:
-            self.sample_labels.add(name)
-
-    def sampleMaterialSelectionChanged(self, idx):
-        name = self.sampleMaterialSelection.itemText(idx)
-        if name not in self.sample_materials:
-            self.sample_materials.append(name)
-
-    def sampleColorSelectionChanged(self, idx):
-        name = self.sampleColorSelection.itemText(idx)
-        if name not in self.sample_colors:
-            self.sample_colors.add(name)
+            column = item.column()
+            # the header of the dataframe contains the `DateTime` header which is not
+            # present in the table, and has te be compensated for
+            if column >= 4:
+                column -= 1
+            self.df.loc[item.row(), self.df_header[column]] = item.text()
 
     def plotTwoD(self, data: Optional[List[float]] = None) -> None:
-        # TODO remove this block:
-        fakedata = {
-            name: value
-            for name, value in zip(
-                self.sample_materials,
-                list(np.random.randint(0, 100, size=len(self.sample_materials))),
-            )
-        }
-        self.plotHistogram(fakedata)
-
+        self.currently_plotting = True
         self.twoDPlotWidget.clear()
 
         # add the baseline of the last calibration
         if self.baseline is not None:
-            normalized_baseline = normalize(self.baseline, self.baseline)
+            normalized_baseline = [1] * len(self.baseline)
             pc = self.twoDPlotWidget.plot(
                 self.wavelengths, normalized_baseline, pen=(255, 0, 0)
             )
             self.twoDPlottedList.append(normalized_baseline)
 
-        for dat in self.twoDPlotDeque:
+        for dat in self.twoDPlotHistoryDeque:
             if self.baseline is not None:
                 dat = normalize(dat, self.baseline)
             self.twoDPlottedList.append(dat)
@@ -988,18 +1054,12 @@ class PsPlot(QMainWindow):
                 symbolBrush=(0, 255, 0),
             )
             pc.setSymbol("x")
+        if data != None:
+            self.twoDPlotHistoryDeque.append(data)
 
         # TODO make this shorter (look how I did this elsewhere)
-        line_color = tuple(
-            self.twoDPlotWidget.palette()
-            .color(QPalette.ColorRole.WindowText)
-            .getRgb()[:-1]
-        )
-        mark_color = tuple(
-            self.twoDPlotWidget.palette()
-            .color(QPalette.ColorRole.Highlight)
-            .getRgb()[:-1]
-        )
+        line_color = tuple(self.palette().text().color().getRgb())
+        mark_color = tuple(self.palette().highlight().color().getRgb())
 
         pen = pg.mkPen(color=line_color, symbolBrush=mark_color, symbolPen="o", width=2)
         if data is not None:
@@ -1008,11 +1068,29 @@ class PsPlot(QMainWindow):
             pc = self.twoDPlotWidget.plot(self.wavelengths, data, pen=pen)
             pc.setSymbol("o")
 
-    def plotHistogram(self, data: Dict[str, int]) -> None:
+        self.currently_plotting = False
+
+    def plotHistogram(self, initialize=False) -> None:
+        if initialize:
+            yticks = list(range(1, len(self.clf.classes_) + 1))
+            widths = [0] * len(self.clf.classes_)
+        else:
+            data = self.df.loc[len(self.df) - 1, self.prediction_options]
+            data = pd.DataFrame([data], columns=self.prediction_options)
+            prediction = {
+                plastic: self.clf.predict_proba(data)[0][idx] * 100
+                for idx, plastic in enumerate(self.clf.classes_)
+            }
+            yticks = list(range(1, len(prediction) + 1))
+            # the order of the predicted values is flipped here because the labels are also flipped
+            widths = [int(x) for x in list(prediction.values())[::-1]]
+
+            # if ever uncertain about the order of the predictions, use this:
+            # for idx, material in enumerate(self.clf.classes_):
+            #     print(f"{material}: {self.clf.predict_proba(data)[0][idx] * 100}%")
+
         self.histogramPlotWidget.clear()
-        yticks = list(range(1, len(data) + 1))
-        widths = list(data.values())
-        self.histogramPlotWidget.setYRange(0, len(data) + 0.5)
+        self.histogramPlotWidget.setYRange(0, len(self.clf.classes_) + 0.5)
         self.bars = pg.BarGraphItem(
             x0=0,
             y=yticks,
@@ -1051,90 +1129,134 @@ class PsPlot(QMainWindow):
         else:
             self.loadDataset(filename)
 
-    def loadDataset(self, dataset_path: str):
-        # the goal here is to load a dataset to visualize in the 3D scatterplot
-        # import the dataframe
-        df_raw = pd.read_csv(dataset_path)
-        # calculate the mean of the last 8 columns of the "spec" readings
-        spec_df = df_raw.query("ID == 'spectralon'")
-        spectralon_wavelengths = spec_df.iloc[:, -8:].mean()
-
-        # preprocess known dataset
-        def apply_snv_transform(row):
-            specific_wavelengths = row[-8:]
-            return self.snv_transform(specific_wavelengths, spectralon_wavelengths)
-
-        # Apply the function to each row of the dataframe
-        df_raw.iloc[:, -8:] = df_raw.iloc[:, -8:].apply(apply_snv_transform, axis=1)
-        df_raw["PlasticNumber"] = df_raw["PlasticType"].map(
-            {"PET": 1, "HDPE": 2, "PVC": 3, "LDPE": 4, "PP": 5, "PS": 6, "other": 7}
+    def _loadDatasetWarning(self) -> bool:
+        """returns true if user is sure"""
+        button = QMessageBox.warning(
+            self,
+            "Load dataset",
+            "You are about to overwrite the data that is displayed by the table.\nAre you sure you want to overwrite?",
+            QMessageBox.Yes,
+            QMessageBox.No,
         )
-        # print(df_raw["PlasticNumber"])
+        return button == QMessageBox.Yes
 
-        types_to_train = ["PET", "HDPE", "PP", "PS"]
-        self.df_train = df_raw[df_raw.PlasticType.isin(types_to_train)]
+    def _loadDatasetWarningReally(self) -> bool:
+        button = QMessageBox.warning(
+            self,
+            "Load dataset",
+            "Are you really sure?",
+            QMessageBox.Yes,
+            QMessageBox.No,
+        )
+        return button == QMessageBox.Yes
 
-        self.datasetloaded = True
-
-    def showDataset(self):
-        if self.datasetloaded is None:
-            button = QMessageBox.warning(
-                self,
-                "showing dataset",
-                "a dataset must first be loaded, woud you like to load the online dataset?",
-                QMessageBox.Yes,
-                QMessageBox.No,
-            )
-            if button == QMessageBox.Yes:
-                self.loadDatasetOnline()
-            else:
+    def loadDataset(self, dataset_path: str):
+        """load a dataset to continue where that dataset last left off"""
+        # give warnings that there is data and it will get overwritten
+        if len(self.df) > 0:
+            if not (self._loadDatasetWarning() and self._loadDatasetWarningReally()):
                 return
 
-        for sample in self.df_train.index:
-            self.axes.scatter(
-                self.df_train["nm1050"],
-                self.df_train["nm1450"],
-                self.df_train["nm1650"],
-                c=self.df_train["PlasticNumber"],
+        new_df = pd.read_csv(
+            dataset_path, index_col="Reading", dtype=self.df_header_dtypes
+        )
+        if list(new_df.columns) != self.df_header:
+            QMessageBox.critical(
+                self,
+                "Load dataset",
+                "Dataset could not be loaded because of unexpected columns\n\n"
+                + f"columns of new dataset:\n {new_df.columns}\n\n"
+                + f"expected columns for a dataset:\n {self.df_header}\n\n"
+                + f"COULD NOT LOAD NEW DATASET!\n\n"
+                + "For help, please contact the PlasticScanner Team",
             )
+            return
+
+        self.df = new_df
+
+        ## clear plots
+        # clear 3d plot
+        self.threeDPlotClear()
+        # build the datastructure needed for 3dplot
+        self.threeDUniqueSeries = {
+            material: {} for material in self.df["PlasticType"].unique()
+        }
+        for _, row in self.df.iterrows():
+            name = row["Name"]
+            material = row["PlasticType"]
+            if name not in self.threeDUniqueSeries[material]:
+                self.threeDUniqueSeries[material][name] = {"data": []}
+            self.threeDUniqueSeries[material][name]["data"].append(
+                row[self.threeDAxisOptions]
+            )
+
+        # clear 2d plot and histogram
+        self.twoDPlotClear()
+        self.plotHistogram(initialize=True)
+
+        ## reset variables
+        # reset calibration counter
+        self.sample_names = set(self.df["Name"])
+        self.sample_colors = set(self.df["Color"])
+        self.sample_materials = self.default_sample_materials.copy()
+        self.sample_materials.extend(
+            list(set(self.df["PlasticType"]) - set(self.sample_materials))
+        )
+        self.current_calibration_counter = 0
+        self.total_calibration_counter = 0
+        self.clearCalibration()
+
+        ## write dataframe to table
+        # clear table an variable
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        self.tableRowLabels = []
+        # build table
+        calibration_counter = 0
+        for idx, row in self.df.iterrows():
+            name = row["Name"] if isinstance(row["Name"], str) else ""
+            plasticType = (
+                row["PlasticType"] if isinstance(row["PlasticType"], str) else ""
+            )
+            color = row["Color"] if isinstance(row["Color"], str) else ""
+            if row["MeasurementType"] == "calibration":
+                self.total_calibration_counter += 1
+                self.addToTable(
+                    row[self.table_used_dataframe_headers],
+                    name=name,
+                    material=plasticType,
+                    color=color,
+                    calibrated_measurement=True,
+                )
+            else:
+                self.addToTable(
+                    row[self.table_used_dataframe_headers],
+                    name=name,
+                    material=plasticType,
+                    color=color,
+                    calibrated_measurement=False,
+                )
+
+        self.plotTwoD()
+        self.plotThreeD()
 
     def exportCsv(self) -> None:
         fname, _ = QFileDialog.getSaveFileName(
             self,
             "Save File",
             "",
-            "CSV (*.csv);;All Files (*)",
+            "CSV(*.csv);;All Files(*)",
         )
         if not fname:
             QMessageBox.information(self, "saving dataset", "No file was selected")
         else:
-            self.df.to_csv(fname)
-            # with open(fname, "w", newline="") as csvfile:
-            #     rows = self.table.rowCount()
-            #     cols = self.table.columnCount()
-            #     writer = csv.writer(csvfile)
-            #     writer.writerow(self.wavelengths)
-            #     for i in range(rows):
-            #         row = []
-            #         for j in range(cols):
-            #             try:
-            #                 val = self.table.item(i, j).text()
-            #             except (
-            #                 AttributeError
-            #             ):  # sometimes table.item() returns None - bug in fw/serial comm?
-            #                 val = ""
-            #             row.append(val)
-            #         writer.writerow(row)
-            #
+            if "." not in fname:
+                fname = fname + ".csv"
+            self.df.to_csv(fname, index_label="Reading")
 
     def twoDPlotExport(self):
-        # import exportDialog
-        #
-        # self.exportDialog = exportDialog.ExportDialog(self.twoDPlotWidget)
-        # self.exportDialog.show(self.contextMenuItem)
-        # print(dir(self.twoDPlotWidget))
-        # self.twoDPlotWidget.exportClicked()
-
+        # TODO
+        ...
         #     fname, _ = QFileDialog.getSaveFileName(
         #         self,
         #         "Save File",
@@ -1145,20 +1267,29 @@ class PsPlot(QMainWindow):
         #         QMessageBox.information(self, "saving dataset", "No file was selected")
         #     else:
         #         self.twoDPlotWidget.export(fname)
-        print("hammer time")
+        # print("hammer time")
 
-    def plotThreeD(self) -> None:
+    def plotThreeD(self, axis_changed: bool = False) -> None:
+        """axis_changed: true if the variable of one of the axes was changed by the user"""
+        indexX = self.threeDAxisOptionsIndexMap[self.threeDAxisVarX]
+        indexY = self.threeDAxisOptionsIndexMap[self.threeDAxisVarY]
+        indexZ = self.threeDAxisOptionsIndexMap[self.threeDAxisVarZ]
         for material in self.threeDUniqueSeries:
-            self.threeDUniqueSeries[material]["1"]["data"].append(
-                list(np.random.randint(0, 10, size=7))
-            )
-            color = self.threeDPlotColormap[material]
+            if material not in self.threeDPlotAllowedMaterials:
+                if material == "":
+                    material_name = "unknown"
+                else:
+                    material_name = "other"
+            else:
+                material_name = material
+
+            color = self.threeDPlotColormap[material_name]
             for id in self.threeDUniqueSeries[material]:
                 if "proxy" not in self.threeDUniqueSeries[material][id]:
                     proxy = QScatterDataProxy()
                     series = QScatter3DSeries(proxy)
 
-                    name = f"{material} | {id}"
+                    name = f"{id} | {material}"
                     series.setName(name)
                     # alternatively: "@xLabel | @yLabel | @zLabel | @seriesName"
                     series.setItemLabelFormat("@seriesName")
@@ -1173,81 +1304,102 @@ class PsPlot(QMainWindow):
                     proxy = self.threeDUniqueSeries[material][id]["proxy"]
                     series = self.threeDUniqueSeries[material][id]["series"]
 
-                if self.threeDPlotLegendButtons[material].isChecked():
-                    dataArray = [
-                        QScatterDataItem(
-                            QVector3D(
-                                data[1],
-                                data[4],
-                                data[6],
-                            )
-                        )
-                        for data in self.threeDUniqueSeries[material][id]["data"]
-                    ]
-                    proxy.resetArray(dataArray)
+                if self.threeDPlotLegendButtons[material_name].isChecked():
+                    if (
+                        len(self.threeDUniqueSeries[material][id]["data"])
+                        > len(proxy.array())
+                        or axis_changed
+                    ):
+                        # if none of the datapoints are None
+                        if not any(
+                            [
+                                data[indexX] == None
+                                or data[indexY] == None
+                                or data[indexZ] == None
+                                for data in self.threeDUniqueSeries[material][id][
+                                    "data"
+                                ]
+                            ]
+                        ):
+                            dataArray = [
+                                QScatterDataItem(
+                                    QVector3D(
+                                        data[indexX],
+                                        data[indexY],
+                                        data[indexZ],
+                                    )
+                                )
+                                for data in self.threeDUniqueSeries[material][id][
+                                    "data"
+                                ]
+                            ]
+
+                            proxy.resetArray(dataArray)
+                        else:
+                            for data in self.threeDUniqueSeries[material][id]["data"]:
+                                if (
+                                    data[indexX] == None
+                                    or data[indexY] == None
+                                    or data[indexZ] == None
+                                ):
+                                    print(
+                                        "WARNING: trying to plot point on normalized axis while non normalized data is present!"
+                                    )
+                                    print(
+                                        "\tSWITCHING TO DISPLAYING NON NORMALIZED DATA..."
+                                    )
+                                    self.threeDAxisVarX = (
+                                        self.threeDAxisVarX.rstrip("_norm") + "_snv"
+                                    )
+                                    self.threeDAxisVarY = (
+                                        self.threeDAxisVarY.rstrip("_norm") + "_snv"
+                                    )
+                                    self.threeDAxisVarZ = (
+                                        self.threeDAxisVarZ.rstrip("_norm") + "_snv"
+                                    )
+                                    self.threeDAxXSelection.setCurrentText(
+                                        self.threeDAxisVarX
+                                    )
+                                    self.threeDAxYSelection.setCurrentText(
+                                        self.threeDAxisVarY
+                                    )
+                                    self.threeDAxZSelection.setCurrentText(
+                                        self.threeDAxisVarZ
+                                    )
+                            self.plotThreeD(axis_changed=True)
+                            return
+
+                        if series not in self.threeDgraph.seriesList():
+                            self.threeDgraph.addSeries(series)
                 else:
-                    proxy.resetArray([QScatterDataItem()])
+                    self.threeDgraph.removeSeries(series)
 
-        # self.m_graph.seriesList()[0].dataProxy().resetArray(dataArray)
+    def threeDDefaultAxes(self):
+        self.threeDAxXSelection.setCurrentText(self.threeDAxisVarXDefault)
+        self.threeDAxYSelection.setCurrentText(self.threeDAxisVarYDefualt)
+        self.threeDAxZSelection.setCurrentText(self.threeDAxisVarZDefault)
 
-    def _redundant(
-        self,
-        data: List[float],
-        color: Tuple[int] = (125, 125, 125),
-        name: str = "",
-    ) -> None:
-        """
-        Plan of attack
-        - per kleur is er één proxy nodig, een proxy houd series vast
-        """
-        if len(color) != 3 or len(data) != 3:
-            raise ValueError("argument may only contain 3 items")
+    def threeDAxXChanged(self, name):
+        self.threeDAxisVarX = name
+        self.plotThreeD(axis_changed=True)
 
-        self.ctr += 1
-        # color = [(255, 0, 0), (0, 255, 0)][self.ctr % 2]
-        # name = ["red", "green"][self.ctr % 2]
-        name = list(self.sample_materials)[self.ctr % 7]
-        color = list(self.sample_materials)[self.ctr % 7]
-        color2 = self.color_tableau[np.random.randint(0, len(self.color_tableau))]
+    def threeDAxYChanged(self, name):
+        self.threeDAxisVarY = name
+        self.plotThreeD(axis_changed=True)
 
-        if color not in self.threeDdata:
-            self.threeDdata[color] = []
-            # the list just exists to make sure that the colors maintain their order
-            self.threeDdata_colors.append(color)
-            # add a series and make it the correct color
-            if self.ctr % 2:
-                # series = QScatter3DSeries(self.scatter_proxy)
-                series = QScatter3DSeries()
-            else:
-                # series = QScatter3DSeries(self.scatter_proxy2)
-                series = QScatter3DSeries()
-            series.setName(name)
-            series.setItemLabelFormat("@xLabel | @yLabel | @zLabel | @seriesName")
-            series.setMeshSmooth(True)
-            series.setBaseColor(color2)
-            series.setColorStyle(Q3DTheme.ColorStyleUniform)
-            self.threeDgraph.addSeries(series)
+    def threeDAxZChanged(self, name):
+        self.threeDAxisVarZ = name
+        self.plotThreeD(axis_changed=True)
 
-        self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
+    def threeDPlotClear(self):
+        for material in self.threeDUniqueSeries:
+            for id in self.threeDUniqueSeries[material]:
+                series = self.threeDUniqueSeries[material][id]["series"]
+                self.threeDgraph.removeSeries(series)
 
-        #  self.threeDdata[color].append(QScatterDataItem(QVector3D(*data)))
-
-        for idx, currcolor in enumerate(self.threeDdata_colors):
-            self.threeDgraph.seriesList()[idx].dataProxy().resetArray(
-                self.threeDdata[currcolor]
-            )
-
-            #  self.threeDgraph.seriesList()[0].dataProxy().resetArray(self.threeDdata[currcolor])
-
-        #  if self.loadDatasetChbx.isChecked():
-        #      self.axes.cla()
-        #      self.showDataset()
-
-        #  data = np.array(data)
-        #  self.baseline = np.array(self.baseline)
-        #  corrected = self.snv_transform(data,self.baseline)
-        #  print("hier")
-        #  self.axes.scatter(corrected[1],corrected[4],corrected[6], c= "red")
+        self.threeDUniqueSeries = {
+            material: {} for material in self.threeDPlotAllowedMaterials
+        }
 
 
 if __name__ == "__main__":
@@ -1265,6 +1417,7 @@ if __name__ == "__main__":
     elif QT_version >= 5.14 and QT_version < 5.14:
         app.setAttribute(Qt.AA_EnableHighDpiScaling)
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
+    pg.setConfigOptions(antialias=True)  # , crashWarning=True)
 
     app.setStyle("Fusion")
     window = PsPlot()
