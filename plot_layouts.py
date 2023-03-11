@@ -528,30 +528,49 @@ class Histogram(QVBoxLayout):
 
     def _init_button_control(self):
         self._sortBtnGroup = QButtonGroup()
-        self._sortDefaultBtn = QRadioButton("sort default")
+        self._sortDefaultBtn = QRadioButton("Sort default")
         self._sortDefaultBtn.setChecked(True)
         self._sortBtnGroup.addButton(self._sortDefaultBtn)
-        self._sortCertaintyBtn = QRadioButton("sort score")
+        self._sortCertaintyBtn = QRadioButton("Sort score")
         self._sortBtnGroup.addButton(self._sortCertaintyBtn)
         self._sortBtnGroup.buttonClicked.connect(self._sorting_selection_changed)
+
+        self._disableBtn = QCheckBox("disable")
+        self._disableBtn.clicked.connect(self._disable)
 
         self._clearBtn = QPushButton("Clear graph")
         self._clearBtn.clicked.connect(self.clear)
 
         self._exportBtn = QPushButton("Export graph")
-        # self.threeDExportPlotBtn.clicked.connect()
+        self._exportBtn.clicked.connect(self.export)
 
-        self._controlLayout = QGridLayout()
-        self._controlLayout.addWidget(self._sortDefaultBtn, 0, 0)
-        self._controlLayout.addWidget(self._sortCertaintyBtn, 0, 1)
-        self._controlLayout.addWidget(self._clearBtn, 1, 0)
-        self._controlLayout.addWidget(self._exportBtn, 1, 1)
+        _sortLayout = QHBoxLayout()
+        _sortLayout.addWidget(self._sortDefaultBtn)
+        _sortLayout.addWidget(self._sortCertaintyBtn)
+
+        _buttonLayout = QHBoxLayout()
+        _buttonLayout.addWidget(self._disableBtn)
+        _buttonLayout.addWidget(self._clearBtn)
+        _buttonLayout.addWidget(self._exportBtn)
+
+        self._controlLayout = QVBoxLayout()
+        self._controlLayout.addLayout(_sortLayout)
+        self._controlLayout.addLayout(_buttonLayout)
         self._controlLayout.setSpacing(0)
 
     def _sorting_selection_changed(self):
         self.plot()
 
+    def _disable(self):
+        if self._disableBtn.isChecked():
+            self.clear()
+        else:
+            self.plot()
+
     def plot(self):
+        if self._disableBtn.isChecked():
+            return
+
         data = self._parent.df.loc[
             len(self._parent.df) - 1, self._parent.PREDICTION_HEADERS
         ]
@@ -595,6 +614,9 @@ class Histogram(QVBoxLayout):
 
         axis.setTicks([vertical_axis.items()])
 
+        self._update_plot(yticks, widths)
+
+    def _update_plot(self, yticks, widths):
         self._bars.setOpts(y=yticks, width=widths)
         for x, y, text in zip(widths, yticks, self._texts):
             if x >= 50:
@@ -608,26 +630,7 @@ class Histogram(QVBoxLayout):
         """set the position of all of the bars to 0"""
         yticks = list(range(1, len(self._parent.clf.classes_) + 1))
         widths = [0] * len(self._parent.clf.classes_)
-        self._plotWidget.clear()
-        self._bars = pg.BarGraphItem(
-            x0=0,
-            y=yticks,
-            height=0.8,
-            width=widths,
-            brush=QColor(self._parent.palette().highlight().color()),
-        )
-        self._plotWidget.addItem(self._bars)
-
-        # draw the text for each bar
-        for x, y in zip(widths, yticks):
-            if x >= 50:
-                text = pg.TextItem(str(x), anchor=(1, 0.5))
-                text.setPos(x, y)
-            else:
-                text = pg.TextItem(str(x), anchor=(0, 0.5))
-                text.setPos(x, y)
-
-            self._plotWidget.addItem(text)
+        self._update_plot(yticks, widths)
 
     def export(self):
         return NotImplemented
