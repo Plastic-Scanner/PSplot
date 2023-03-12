@@ -8,10 +8,12 @@ ipython = "*"
 numpy = "*"
 python-language-server = "*"
 pyserial = "*"
-pyqt6 = "*"
+pyqt5 = "*"
 pyqtgraph = "*"
-
-[dev-packages]
+PyQtDataVisualization = "*"
+matplotlib = "*"
+pandas = "*"
+joblib = "*"
 
 [requires]
 python_version = "3.8"
