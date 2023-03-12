@@ -27,10 +27,23 @@ Use `exit` or Ctrl+D to exit pipenv shell
 
 
 ## Usage
+The software has three sections:
+### Data in/out
+here you can select your developement board, if no COM port is available/selected it will use dummy data (to help the developers!)
+you can also import or export data to load previous dataset or to export your data once you are done.
 
-Select the serial device from the dropdown menu on the top (e.g. /dev/ttyACM0 or COM5). Dummy data will be used when no device connected.  
-Use spacebar to get a measurement (plot needs to be focused/clicked first, see [bug](https://github.com/Plastic-Scanner/PSplot/issues/12)).
-Using the "calibrate" button it performs a measurement, taken as a reference - displaying measurements between 0 and 1.
+### Measuring
+in this section you can 
+- calibrate with reference material
+- fill in details about (un)known sample 
+- take a measurement
+
+### Data visualisation
+The last section shows the visualisation of the measurement. it has four sections
+1. 2D spectrum graph, this shows the measurement from the sample, with the reference measurement as an ideal straight line and with the SNV applied. It shows the last 3 measurements
+2. 3D scatter plot, this shows a 3D plot with the previous measurements. the colors are based on the "Sample Material" input. It defaults to the the axis that we think are the most interesting, but with the drop down menus you can play around to see what works for you.
+3. > WARNING: this is a first experiment! it is a bar chart, that shows what the computer thinks is the most likely type of plastic, this is at the moment only an experiment for HDPE, PET, PP and PS
+4. table with the raw measurement values
 
 
 ## Contributing

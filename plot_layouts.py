@@ -49,7 +49,7 @@ class ScatterPlot2D(QVBoxLayout):
         self._parent = parent
         self._changing_plot = False
 
-        # used for also plotting previouse values
+        # used for also plotting previous values
         self.plot_history = deque(maxlen=3)
 
         self._init_plot_widget()

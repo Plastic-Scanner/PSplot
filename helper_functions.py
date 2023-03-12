@@ -20,7 +20,7 @@ def normalize(
 
 
 def SNV_transform(data: Union[ArrayLike, List[float]]) -> List[float]:
-    # the following is an SNV tranform
+    # the following is an SNV transform
     # Subtract the mean and divide by the standarddiviation
     return list((np.asarray(data) - np.mean(data)) / np.std(data))
 

@@ -81,7 +81,7 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowIcon(QIcon("logo3-01.png"))
+        self.setWindowIcon(QIcon("ps_logo.png"))
 
         # HARDCODED SETTINGS
         self.WAVELENGHTS = [
@@ -711,7 +711,7 @@ class PsPlot(QMainWindow):
         if not self.currently_storing:
             column = item.column()
             # the header of the dataframe contains the `DateTime` header which is not
-            # present in the table, and has te be compensated for
+            # present in the table, and has to be compensated for
             if column >= 4:
                 column -= 1
             self.df.loc[item.row(), self.DF_HEADER[column]] = item.text()
