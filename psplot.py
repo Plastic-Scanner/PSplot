@@ -818,7 +818,7 @@ class PsPlot(QMainWindow):
         self.table.setRowCount(0)
         self.tableRowLabels = []
         # build table
-        for idx, row in self.df.iterrows():
+        for _idx, row in self.df.iterrows():
             name = row["Name"] if isinstance(row["Name"], str) else ""
             plasticType = (
                 row["PlasticType"] if isinstance(row["PlasticType"], str) else ""
