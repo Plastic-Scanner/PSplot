@@ -33,7 +33,7 @@ Use `exit` or Ctrl+D to exit pipenv shell
 
 
 ## Usage
-The interface is divided up in 3 sections
+The interface is divided up in 3 sections:
 ### Data in/out
 Here you can select your developement board, if no COM port is available/selected it will use dummy data (to help the developers!)
 You can also import or export data to load previous dataset or to export your data once you are done.
