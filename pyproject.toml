@@ -1,0 +1,8 @@
+[project.urls]
+homepage = "https://github.com/Plastic-Scanner/PSplot"
+
+[tool.ruff]
+target-version = "py38"
+
+[tool.ruff.pydocstyle]
+convention = "numpy"

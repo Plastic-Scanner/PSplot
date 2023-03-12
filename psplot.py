@@ -1,35 +1,42 @@
 #!/usr/bin/env python
-import csv
-from collections import deque
-import numpy as np
-from PyQt6.QtCore import Qt, pyqtSignal, QT_VERSION_STR
-from PyQt6.QtGui import QKeySequence, QKeyEvent, QColor, QPalette, QIcon
-from PyQt6.QtWidgets import (
+
+from types import NoneType
+from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
+from PyQt5.QtGui import (
+    QColor,
+    QIcon,
+    QKeyEvent,
+)
+from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
-    QCheckBox,
-    QDockWidget,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QListWidget,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+from datetime import datetime
+from typing import List, Union
+from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
+from helper_functions import normalize, SNV_transform, list_to_string
+import joblib
+import os
+import pandas as pd
+
+# pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
 import random
 import serial
 import serial.tools.list_ports
-import sys
-from typing import List, Optional
+import time
 
 
 class ComboBox(QComboBox):
@@ -74,210 +81,329 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowIcon(QIcon('logo3-01.png'))
+        self.setWindowIcon(QIcon("logo3-01.png"))
 
         # HARDCODED SETTINGS
-        self.wavelengths = [
-            855,
+        self.WAVELENGHTS = [
             940,
             1050,
+            1200,
             1300,
             1450,
             1550,
             1650,
             1720,
-        ]  # in nanometers, 20nm FWHM
-        self.baudrate = 9600
-        self.baseline = None
+        ]  # in nanometers
+        self.BAUDRATE = 9600
+        self.DATASET_URL = "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
+
         self.serial = None
 
-        ## To keep track
-        # used for also plotting previouse values
-        self.old_data = deque(maxlen=3)
-        # to keep track of the amount of calibrations done
-        self.calibration_counter = 0
-        # holds labers for each row
-        self.row_labels = []
+        # the names of the columns of the table
+        self.TABLE_HEADER = ["name", "material", "color"] + [
+            str(x) for x in self.WAVELENGHTS
+        ]
+        # the columns of the dataframe that are represented in the table
+        self.TABLE_DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in self.WAVELENGHTS]
 
-        # Widgets
-        self.widget = QWidget()  # Container widget
+        # the headers for the dataframe:
+        # |  Reading                |   the how many'th measurement                   |
+        # |  Name                   |   name or id of the piece                       |
+        # |  PlasticType            |   type of the plastic                           |
+        # |  Color                  |   physical color of the piece of plastic        |
+        # |  MeasurementType        |   if the measurement was a calibration or not   | options: regular, calibration
+        # |  nm<wavelengths>        |   measured signal per wavelength                |
+        # |  nm<wavelengths>_norm   |   signal per wavelength after normalization     |
+        self.DF_HEADER = (
+            [
+                "Name",
+                "PlasticType",
+                "Color",
+                "MeasurementType",
+                "DateTime",
+            ]
+            + [f"nm{x}" for x in self.WAVELENGHTS]
+            + [f"nm{x}_snv" for x in self.WAVELENGHTS]
+            + [f"nm{x}_norm" for x in self.WAVELENGHTS]
+        )
+        self.DF_HEADER_DTYPES = (
+            {
+                "Name": str,
+                "PlasticType": str,
+                "Color": str,
+                "MeasurementType": str,
+                "DateTime": str,
+            }
+            | {f"nm{x}": float for x in self.WAVELENGHTS}
+            | {f"nm{x}_snv": float for x in self.WAVELENGHTS}
+            | {f"nm{x}_norm": float for x in self.WAVELENGHTS}
+        )
+        # the columns of the dataframe that are used for the classifier model
+        self.PREDICTION_HEADERS = [f"nm{x}" for x in self.WAVELENGHTS]
 
-        ## Serial selection
-        self.serialList = ComboBox()
-        self.serialList.onPopup.connect(self.serialScan)
-        self.serialList.activated.connect(self.serialConnect)
+        self.SCATTER3D_AXIS_OPTIONS = (
+            [f"nm{x}" for x in self.WAVELENGHTS]
+            + [f"nm{x}_snv" for x in self.WAVELENGHTS]
+            + [f"nm{x}_norm" for x in self.WAVELENGHTS]
+        )
+
+        self.SCATTER3D_AXIS_VAR_X_DEFAULT = "nm1050_norm"
+        self.SCATTER3D_AXIS_VAR_Y_DEFAULT = "nm1450_norm"
+        self.SCATTER3D_AXIS_VAR_Z_DEFAULT = "nm1650_norm"
+
+        # colorblind friendly colors taken and adjusted from https://projects.susielu.com/viz-palette
+        # ["#ffd700", "#ffb14e", "#fa8775", "#ea5f94",
+        #  "#cd34b5", "#9d02d7", "#0000ff", "#2194F9"]
+        self.COLOR_TABLEAU = (
+            QColor(255, 215, 0),
+            QColor(255, 177, 78),
+            QColor(250, 135, 117),
+            QColor(234, 95, 148),
+            QColor(205, 52, 181),
+            QColor(157, 2, 215),
+            QColor(33, 148, 249),
+            QColor(0, 0, 255),
+        )
+        self.SCATTER3D_ALLOWED_MATERIALS = [
+            "PP",
+            "PET",
+            "PS",
+            "HDPE",
+            "LDPE",
+            "PVC",
+            "other",
+            "unknown",
+        ]
+        self.SCATTER3D_COLOR_MAP = {
+            x: y
+            for x, y in zip(
+                self.SCATTER3D_ALLOWED_MATERIALS,
+                self.COLOR_TABLEAU,
+            )
+        }
+
+        self.df = pd.DataFrame(columns=self.DF_HEADER)
+
+        # classifier model used to predict type of plastic
+        self.clf = joblib.load("model.joblib")
+
+        # keeps track of all of the samples that have been measured
+        self.DEFAULT_SAMPLE_MATERIALS = [
+            "PP",
+            "PET",
+            "PS",
+            "HDPE",
+            "LDPE",
+            "PVC",
+            "spectralon",
+            "unknown",
+        ]
+        self.sample_materials = self.DEFAULT_SAMPLE_MATERIALS.copy()
+
+        # holds the calibration measurement
+        self.baseline: Union[NoneType, List[float]] = None
+
+        self.sample_colors = {""}
+        self.sample_names = {""}
+
+        self.fullscreen = False
+        self.overwrite_no_callibration_warning = False
+        # true when self.storeMeasurement is active
+        self.currently_storing = False
+
+        # all the values that were last plotted
+        self.twoDPlottedList = []
+        # to keep track of the amount of calibrations done in the current session
+        self.current_calibration_counter = 0
+        # the amount of calibrations done in the current session + the previouse sessions
+        self.total_calibration_counter = 0
+        # holds labels for each row of the table, calibration rows are labeled differently
+        self.tableRowLabels = []
+
+        ## setting up the UI elements
+        # input output (selecting serial and saving)
+        self._setupInOutUI()
+        # taking a measurement
+        self._setupMeasureUI()
+        # 2d Plot
+        self.scatter2d = ScatterPlot2D(self)
+        # 3d plot
+        self.scatter3d = ScatterPlot3D(self)
+        # histogram
+        self.histogram = Histogram(self)
+
+        # layout for graphs
+        self.graphLayout = QHBoxLayout()
+        self.graphLayout.setSpacing(20)
+        self.graphLayout.addLayout(self.scatter2d, 50)
+        self.graphLayout.addLayout(self.scatter3d, 50)
+        self.graphLayout.addLayout(self.histogram, 50)
+
+        ## Table to display output
+        self.table = Table()
+        self.table.setColumnCount(len(self.TABLE_HEADER))
+        self.table.setHorizontalHeaderLabels(self.TABLE_HEADER)
+        self.table.itemChanged.connect(self.tableChanged)
+        # make the first 2 columns extra wide
+        self.table.setColumnWidth(0, 200)
+        self.table.setColumnWidth(1, 200)
+
+        ## add all layouts to mainLayout
+        # Container widget
+        self.widget = QWidget(self)
+        self.setCentralWidget(self.widget)
+        self.mainLayout = QVBoxLayout()
+        self.mainLayout.setSpacing(10)
+        self.mainLayout.addWidget(self.inoutBox)
+        self.mainLayout.addWidget(self.measureBox)
+        self.mainLayout.addLayout(self.graphLayout)
+        self.mainLayout.addWidget(self.table)
+        self.widget.setLayout(self.mainLayout)
+
+        self.setWindowTitle("PSPlot")
+        self.resize(1000, 600)
+        self.setMinimumSize(600, 350)
+        self.center()
+
+        # Connect to the serial device (first, newest detected)
+        self.serial_scan()
+        self.serialComboBox.setCurrentIndex(0)
+        self.serial_connect()
+
+        # TODO update this to include all new widgets
+        self.scatter2d._plotWidget.setFocus()
+        self.widget.setTabOrder(self.scatter2d.plotWidget, self.serialComboBox)
+
+    def _setupInOutUI(self):
+        # selecting serial
+        self.serialComboBox = ComboBox()
+        self.serialComboBox.onPopup.connect(self.serial_scan)
+        self.serialComboBox.activated.connect(self.serial_connect)
         # make it take up the maximum possible space
-        self.serialList.setSizePolicy(
+        self.serialComboBox.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
 
         # serial notification
-        self.serialNotif = QLabel()
+        self.serialNotifLbl = QLabel()
 
-        # serial horizonal layout
-        self.horizontalSerialLayout = QHBoxLayout()
-        self.horizontalSerialLayout.addWidget(self.serialList)
-        self.horizontalSerialLayout.addWidget(self.serialNotif)
+        # loading and saving
+        self.loadDatasetLocalBtn = QPushButton("Load dataset from file")
+        self.loadDatasetLocalBtn.clicked.connect(self.load_dataset_local)
 
-        ## Plot
-        self.pw = pg.PlotWidget(background=None)
-
-        self.pi = self.pw.getPlotItem()
-        self.pi.hideButtons()
-        self.pi.setMenuEnabled(False)
-        self.pi.showGrid(x=True, y=True, alpha=0.5)
-        self.pi.setMouseEnabled(x=False, y=True)
-
-        self.pc = self.pw.plot()
-        self.pc.setSymbol("o")
-
-        self.xPadding = min(self.wavelengths) * 0.1
-        self.yPadding = 0.015
-        self.yMin = 0
-        self.yMax = 0.35
-        self.pi.setLimits(
-            xMin=min(self.wavelengths) - self.xPadding,
-            xMax=max(self.wavelengths) + self.xPadding,
-            yMin=0 - self.yPadding,
-        )
-        self.pi.setLabel("left", "NIR output", units="V", unitPrefix="m")
-        self.pi.setLabel("bottom", "Wavelength (nm)")
-        self.pi.getAxis("bottom").enableAutoSIPrefix(False)
-        self.pi.setTitle("Reflectance")
-
-        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-        self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
-
-        ## Table output
-        self.tableHeader = ["sample name"] + [str(x) for x in self.wavelengths]
-        self.table = Table()
-        self.table.setColumnCount(len(self.tableHeader))
-        self.table.setHorizontalHeaderLabels(self.tableHeader)
-        self.table.setColumnWidth(0, 200)
-
-        ## Buttons
-        # center, auto-restoreAxis and clear
-        self.axisRestoreBtn = QPushButton("Restore axis")
-        self.axisRestoreBtn.clicked.connect(self.restoreAxisPlot)
-
-        self.axisAutoRestoreChbx = QCheckBox("auto-restore axis")
-        self.axisAutoRestoreChbx.clicked.connect(self.restoreAxisPlotChbxClick)
-
-        self.axisAutoRangeChbx = QCheckBox("auto-center axis")
-        self.axisAutoRangeChbx.clicked.connect(self.centerAxisPlotChbxClick)
-
-        self.clearPlotBtn = QPushButton("Clear graph")
-        self.clearPlotBtn.clicked.connect(self.clearGraph)
-
-        self.clearCalibrationBtn = QPushButton("Clear Calibration")
-        self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
-
-        self.horizontalBtnLayout = QHBoxLayout()
-        self.horizontalBtnLayout.addWidget(self.axisRestoreBtn)
-        self.horizontalBtnLayout.addWidget(self.axisAutoRestoreChbx)
-        self.horizontalBtnLayout.addWidget(self.axisAutoRangeChbx)
-        self.horizontalBtnLayout.addWidget(self.clearPlotBtn)
-        self.horizontalBtnLayout.addWidget(self.clearCalibrationBtn)
+        self.loadDatasetOnlineBtn = QPushButton("Load dataset from github")
+        self.loadDatasetOnlineBtn.clicked.connect(self.load_dataset_online)
 
         # export and calibrate
-        self.exportBtn = QPushButton("Export CSV")
-        self.exportBtn.clicked.connect(self.exportCsv)
+        self.exportDataBtn = QPushButton("Export dataset to file")
+        self.exportDataBtn.clicked.connect(self.exportCsv)
 
+        # serial horizontal layout
+        self.horizontalSerialLayout = QHBoxLayout()
+        self.horizontalSerialLayout.addWidget(self.serialComboBox)
+        self.horizontalSerialLayout.addWidget(self.serialNotifLbl)
+
+        # load and save horizontal layout
+        self.horizontalLoadSaveLayout = QHBoxLayout()
+        self.horizontalLoadSaveLayout.addWidget(self.loadDatasetOnlineBtn)
+        self.horizontalLoadSaveLayout.addWidget(self.loadDatasetLocalBtn)
+        self.horizontalLoadSaveLayout.addWidget(self.exportDataBtn)
+
+        self.inoutBoxLayout = QVBoxLayout()
+        self.inoutBoxLayout.addLayout(self.horizontalSerialLayout)
+        self.inoutBoxLayout.addLayout(self.horizontalLoadSaveLayout)
+        self.inoutBox = QGroupBox("data in/out")
+        self.inoutBox.setLayout(self.inoutBoxLayout)
+
+    def _setupMeasureUI(self):
+        # calibration
         self.calibrateBtn = QPushButton("Calibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
 
-        # add all layouts
-        self.layout = QVBoxLayout()
-        self.layout.addLayout(self.horizontalSerialLayout)
-        self.layout.addWidget(self.pw)
-        self.layout.addLayout(self.horizontalBtnLayout)
-        self.layout.addWidget(self.table)
-        self.layout.addWidget(self.exportBtn)
-        self.layout.addWidget(self.calibrateBtn)
-        self.layout.setContentsMargins(30, 60, 60, 30)
-        self.widget.setLayout(self.layout)
+        self.clearCalibrationBtn = QPushButton("Clear Calibration")
+        self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
+        self.clearCalibrationBtn.setDisabled(True)
 
-        self.setWindowTitle("My plotter")
-        self.resize(1000, 600)
-        self.setMinimumSize(600, 350)
-        self.center()
-        self.setCentralWidget(self.widget)
-
-        # Connect to the serial device (first, newest detected)
-        self.serialScan()
-        self.serialList.setCurrentIndex(0)
-        self.serialConnect(0)
-
-        self.pw.setFocus()
-        self.widget.setTabOrder(self.pw, self.serialList)
-
-    def serialScan(self) -> None:
-        """Scans for available serial devices and updates the list"""
-
-        self.serialList.clear()
-        self.serialList.insertItem(0, "None")
-        for dev in list(serial.tools.list_ports.comports()):
-            self.serialList.insertItem(0, dev.device)
-
-    def serialConnect(self, index: int) -> None:
-        """Connects to the serial device (e.g. /dev/ttyACM0)"""
-
-        if self.serial is not None:
-            self.serial.close()  # Close previously opened port, if exist
-
-        port = self.serialList.currentText()
-
-        try:
-            self.serial = serial.Serial(port, baudrate=self.baudrate, timeout=0.5)
-            print(f"Opened serial port {self.serial.portstr}")
-            self.serial.readline()  # Consume the "Plastic scanner initialized line"
-            self.serialNotif.setText("Using real data")
-        except serial.serialutil.SerialException:
-            print(f"Cannot open serial port '{port}', using dummy data")
-            self.serial = None
-            self.serialNotif.setText("Using dummy data")
-        except Exception as e:
-            print(f"Can't open serial port '{port}', using dummy data")
-            self.serial = None
-            self.serialNotif.setText("Using dummy data")
-
-    def center(self) -> None:
-        qr = self.frameGeometry()
-        cp = self.screen().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
-
-    def centerAxisPlotChbxClick(self) -> None:
-        self.pw.setFocus()
-        if self.axisAutoRangeChbx.isChecked():
-            self.axisAutoRestoreChbx.setChecked(0)
-            self.centerAxisPlot()
-
-    def centerAxisPlot(self) -> None:
-        # when coming from self.plot checking if it is checked is now done twice
-        self.pi.getViewBox().autoRange()
-        all_plotted_data = [x for y in self.old_data for x in y] + (self.baseline or [])
-        self.pi.getViewBox().setYRange(
-            min=min(all_plotted_data) - self.yPadding,
-            max=max(all_plotted_data) + self.yPadding,
+        # the next two buttons will be enabled after a calibration has been performed
+        self.regularMeasurementBtn = QPushButton(
+            "Take measurement\n(shortcut: spacebar)"
         )
+        self.regularMeasurementBtn.setToolTip(
+            "a calibration measurement needs to be taken first"
+        )
+        self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
+        # comment out the next line in case you only want to allow measurements after a calibration
+        # self.regularMeasurementBtn.setDisabled(True)
 
-    def restoreAxisPlotChbxClick(self) -> None:
-        self.pw.setFocus()
-        if self.axisAutoRestoreChbx.isChecked():
-            self.axisAutoRangeChbx.setChecked(0)
-            self.restoreAxisPlot()
+        # sample material
+        self.sampleMaterialInfoLabel = QLabel()
+        self.sampleMaterialInfoLabel.setText("Sample material:")
 
-    def restoreAxisPlot(self) -> None:
-        self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-        self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
+        self.sampleMaterialSelection = QComboBox()
+        self.sampleMaterialSelection.setDuplicatesEnabled(False)
+        self.sampleMaterialSelection.setEditable(True)
+        # self.sampleMaterialSelection.currentIndexChanged.connect(
+        #     self.sampleMaterialSelectionChanged
+        # )
+        self.sampleMaterialSelection.setPlaceholderText("select material")
+        self.sampleMaterialSelection.addItems(sorted(self.sample_materials))
+        self.sampleMaterialSelection.setCurrentText("unknown")
 
-    def clearGraph(self) -> None:
-        self.old_data.clear()
-        self.pw.clear()
+        # sample name
+        self.sampleNameInfoLabel = QLabel()
+        self.sampleNameInfoLabel.setText("Sample name:")
 
-    def keyPressEvent(self, e: QKeyEvent) -> None:
-        if e.key() == Qt.Key.Key_Escape or e.key() == Qt.Key.Key_Q:
+        self.sampleNameSelection = QComboBox()
+        self.sampleNameSelection.setDuplicatesEnabled(False)
+        self.sampleNameSelection.setEditable(True)
+        self.sampleNameSelection.addItem("")
+        # self.sampleNameSelection.currentIndexChanged.connect(
+        #     self.sampleNameSelectionChanged
+        # )
+        self.sampleNameSelection.setPlaceholderText("select sample name")
+
+        # sample color
+        self.sampleColorInfoLabel = QLabel()
+        self.sampleColorInfoLabel.setText("Sample color:")
+
+        self.sampleColorSelection = QComboBox()
+        self.sampleColorSelection.setDuplicatesEnabled(False)
+        self.sampleColorSelection.setEditable(True)
+        self.sampleColorSelection.addItem("")
+        # self.sampleColorSelection.currentIndexChanged.connect(
+        #     self.sampleColorSelectionChanged
+        # )
+        self.sampleColorSelection.setPlaceholderText("select sample name")
+
+        self.calibrationLayout = QHBoxLayout()
+        self.calibrationLayout.addWidget(self.calibrateBtn)
+        self.calibrationLayout.addWidget(self.clearCalibrationBtn)
+
+        self.sampleNameLayout = QHBoxLayout()
+        self.sampleNameLayout.addWidget(self.sampleNameInfoLabel, 25)
+        self.sampleNameLayout.addWidget(self.sampleNameSelection, 75)
+
+        self.sampleMaterialLayout = QHBoxLayout()
+        self.sampleMaterialLayout.addWidget(self.sampleMaterialInfoLabel, 25)
+        self.sampleMaterialLayout.addWidget(self.sampleMaterialSelection, 75)
+
+        self.sampleColorLayout = QHBoxLayout()
+        self.sampleColorLayout.addWidget(self.sampleColorInfoLabel, 25)
+        self.sampleColorLayout.addWidget(self.sampleColorSelection, 75)
+
+        self.measureBoxLayout = QVBoxLayout()
+        self.measureBoxLayout.addLayout(self.calibrationLayout)
+        self.measureBoxLayout.addLayout(self.sampleNameLayout)
+        self.measureBoxLayout.addLayout(self.sampleMaterialLayout)
+        self.measureBoxLayout.addLayout(self.sampleColorLayout)
+        self.measureBoxLayout.addWidget(self.regularMeasurementBtn)
+
+        self.measureBox = QGroupBox("measuring")
+        self.measureBox.setLayout(self.measureBoxLayout)
+
+    def keyPressEvent(self, e: QKeyEvent):
+        # if e.key() == Qt.Key.Key_Escape or e.key() == Qt.Key.Key_Q:
+        if e.key() == Qt.Key.Key_Q:
             self.close()
 
         elif (
@@ -285,74 +411,94 @@ class PsPlot(QMainWindow):
             or e.key() == Qt.Key.Key_W
             or e.key() == Qt.Key.Key_Plus
         ):
-            self.pi.getViewBox().scaleBy((1, 0.9))
+            self.scatter2d._viewBox.scaleBy((1, 0.9))
 
         elif (
             e.key() == Qt.Key.Key_Down
             or e.key() == Qt.Key.Key_S
             or e.key() == Qt.Key.Key_Minus
         ):
-            self.pi.getViewBox().scaleBy((1, 1.1))
-
-        elif e.key() == Qt.Key.Key_Left or e.key() == Qt.Key.Key_A:
-            self.pi.getViewBox().translateBy((-10, 0))
-
-        elif e.key() == Qt.Key.Key_Right or e.key() == Qt.Key.Key_D:
-            self.pi.getViewBox().translateBy((+10, 0))
+            self.scatter2d._viewBox.scaleBy((1, 1.1))
 
         elif e.key() == Qt.Key.Key_Home:
-            self.pw.setXRange(self.wavelengths[0], self.wavelengths[-1], padding=0.1)
-            self.pw.setYRange(self.yMin, self.yMax, padding=self.yPadding)
+            self.scatter2d._plotWidget.setXRange(
+                self.WAVELENGHTS[0], self.WAVELENGHTS[-1], padding=0.1
+            )
+            self.scatter2d._plotWidget.setYRange(
+                self.yMin, self.yMax, padding=self.yPadding
+            )
 
         elif e.key() == Qt.Key.Key_Space:
-            data = self.getMeasurement()
-            self.addMeasurement(data)
-            self.plot(data)
+            self.takeRegularMeasurement()
+        elif e.key() == Qt.Key.Key_F11:
+            if not self.fullscreen:
+                self.windowHandle().showFullScreen()
+                self.fullscreen = True
+            else:
+                self.windowHandle().showNormal()
+                self.fullscreen = False
 
-    def addCalibrationMeasurement(self, data: List[float]) -> None:
-        self.addToTable(data, True)
+    def center(self):
+        """centers the window to the center of the screen"""
+        qr = self.frameGeometry()
+        cp = self.screen().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
 
-    def addMeasurement(self, data: List[float]) -> None:
-        # use calibration if possible
-        if self.baseline is not None:
-            dataCalibrated = [dat / base for dat, base in zip(data, self.baseline)]
-            #  data = dataCalibrated
+    def serial_scan(self) -> None:
+        """Scans for available serial devices and updates the list"""
 
-        self.addToTable(data)
+        self.serialComboBox.clear()
+        self.serialComboBox.insertItem(0, "None")
+        for dev in list(serial.tools.list_ports.comports()):
+            self.serialComboBox.insertItem(0, dev.device)
 
-        self.old_data.append(data)
+    def serial_connect(self) -> None:
+        """Connects to the serial device (e.g. /dev/ttyACM0)"""
 
-    def addToTable(
-        self, data: List[float], calibrated_measurement: bool = False
-    ) -> None:
-        # add row
-        nRows = self.table.rowCount()
-        self.table.setRowCount(nRows + 1)
-        self.table.setItem(
-            nRows, 0, QTableWidgetItem("")
-        )  # sample name (user-editable, empty by default)
-        if calibrated_measurement:
-            self.row_labels.append(f"c {self.calibration_counter}")
-        else:
-            self.row_labels.append(str(nRows + 1 - self.calibration_counter))
-        self.table.setVerticalHeaderLabels(self.row_labels)
+        if self.serial is not None:
+            self.serial.close()  # Close previously opened port, if exist
 
-        # add value for every column of new row
-        dataStr = self.listToString(data)
-        for col, val in enumerate(dataStr.split(), start=1):
-            cell = QTableWidgetItem(val)
-            cell.setFlags(
-                cell.flags() & ~Qt.ItemFlag.ItemIsEditable
-            )  # disable editing of cells
+        port = self.serialComboBox.currentText()
 
-            # use a different color if the measurement was taken for calibration
-            if calibrated_measurement:
-                cell.setForeground(
-                    self.table.palette().color(QPalette.ColorRole.Highlight)
-                )
-            self.table.setItem(nRows, col, cell)
+        try:
+            self.serial = serial.Serial(port, baudrate=self.BAUDRATE, timeout=1)
+            print(f"Opened serial port {self.serial.portstr}")
+            self.serialNotifLbl.setText("Using real data")
+            time.sleep(1)
+            self.serial.readline()  # Consume the "Plastic scanner initialized" line
+        except serial.serialutil.SerialException:
+            print(f"Cannot open serial port '{port}', using dummy data")
+            self.serial = None
+            self.serialNotifLbl.setText("Using dummy data")
+        except Exception:
+            print(f"Can't open serial port '{port}', using dummy data")
+            self.serial = None
+            self.serialNotifLbl.setText("Using dummy data")
 
-        self.table.scrollToBottom()
+    def takeRegularMeasurement(self):
+        if (
+            self.current_calibration_counter == 0
+            and self.overwrite_no_callibration_warning is False
+        ):
+            button = QMessageBox.warning(
+                self,
+                "taking measurement",
+                "No calibration is present are you sure you want to take a measurement?\n(if yes: PSPlot might crash)",
+                QMessageBox.Yes,
+                QMessageBox.No,
+            )
+            if button == QMessageBox.No:
+                return
+            else:
+                self.overwrite_no_callibration_warning = True
+
+        data = self.getMeasurement()
+        self.addMeasurement(data)
+        self.scatter2d.plot(SNV_transform(data))
+        self.scatter3d.plot()
+        self.histogram.plot()
+        # self.plotThreeD([data[1], data[4], data[6]])
 
     def getMeasurement(self) -> List[float]:
         if self.serial is not None:
@@ -382,77 +528,356 @@ class PsPlot(QMainWindow):
 
         return data
 
+    def addMeasurement(self, data: List[float]) -> None:
+        material = self.sampleMaterialSelection.currentText().rstrip()
+        if material not in self.sample_materials:
+            self.sample_materials.append(material)
+            self.sampleMaterialSelection.addItem(material)
+
+        name = self.sampleNameSelection.currentText().rstrip()
+        if name not in self.sample_names:
+            self.sample_names.add(name)
+            self.sampleNameSelection.addItem(name)
+
+        color = self.sampleColorSelection.currentText().rstrip()
+        if color not in self.sample_colors:
+            self.sample_colors.add(color)
+            self.sampleColorSelection.addItem(color)
+
+        self.storeMeasurement(data, name=name, material=material, color=color)
+
+    def storeMeasurement(
+        self,
+        data: List[float],
+        name: str = "",
+        material: str = "unknown",
+        color: str = "",
+        calibrated_measurement: bool = False,
+    ):
+        """adds newest measurement to table and dataframe"""
+
+        data_snv = SNV_transform(data)
+
+        if calibrated_measurement:
+            data_normalized = [1] * len(data)
+        else:
+            if self.baseline is not None:
+                data_normalized = normalize(data, self.baseline)
+            else:
+                data_normalized = [None] * len(data)
+
+        self.currently_storing = True
+        self.addToDataframe(
+            data,
+            data_snv,
+            data_normalized,
+            name,
+            material,
+            color,
+            calibrated_measurement,
+        )
+        self.addToTable(
+            data,
+            name,
+            material,
+            color,
+            calibrated_measurement,
+        )
+
+        if not calibrated_measurement:
+            if material not in self.scatter3d.unique_series:
+                self.scatter3d.unique_series[material] = {}
+            if name not in self.scatter3d.unique_series[material]:
+                self.scatter3d.unique_series[material][name] = {"data": []}
+
+            self.scatter3d.unique_series[material][name]["data"].append(
+                data + data_snv + data_normalized
+            )
+
+        self.currently_storing = False
+
+    def addToDataframe(
+        self,
+        data: List[float],
+        data_snv: List[float],
+        data_normalized: List[Union[float, None]],
+        name: str = "",
+        material: str = "unknown",
+        color: str = "",
+        calibrated_measurement: bool = False,
+    ):
+        if calibrated_measurement:
+            measurement_type = "calibration"
+        else:
+            measurement_type = "regular"
+
+        self.df.loc[len(self.df)] = [
+            name,
+            material,
+            color,
+            measurement_type,
+            datetime.now(),
+            *data,
+            *data_snv,
+            *data_normalized,
+        ]
+
+    def addToTable(
+        self,
+        data: List[float],
+        name: str = "",
+        material: str = "unknown",
+        color: str = "",
+        calibrated_measurement: bool = False,
+    ) -> None:
+        nRows = self.table.rowCount()
+        # add a row
+        self.table.setRowCount(nRows + 1)
+
+        # add sample name as column 0
+        self.table.setItem(nRows, 0, QTableWidgetItem(name))
+        # add sample material as column 1
+        self.table.setItem(nRows, 1, QTableWidgetItem(material))
+        # add sample color as column 2
+        self.table.setItem(nRows, 2, QTableWidgetItem(color))
+
+        if calibrated_measurement:
+            self.tableRowLabels.append(f"c {self.total_calibration_counter}")
+            self.table.setItem(nRows, 1, QTableWidgetItem("spectralon"))
+        else:
+            self.tableRowLabels.append(str(nRows + 1 - self.total_calibration_counter))
+        self.table.setVerticalHeaderLabels(self.tableRowLabels)
+
+        # add value for every column of new row
+        dataStr = list_to_string(data)
+        for col, val in enumerate(dataStr.split(), start=3):
+            cell = QTableWidgetItem(val)
+            cell.setFlags(
+                cell.flags() & ~Qt.ItemFlag.ItemIsEditable
+            )  # disable editing of cells
+
+            # use a different color if the measurement was taken for calibration
+            self.table.setItem(nRows, col, cell)
+
+        if calibrated_measurement:
+            for column in range(self.table.columnCount()):
+                self.table.item(nRows, column).setBackground(
+                    self.palette().alternateBase().color()
+                )
+
+        self.table.scrollToBottom()
+
     def calibrate(self) -> None:
         button = QMessageBox.question(
             self, "Calibration", "Is the spectralon sample on the sensor?"
         )
-        if button == QMessageBox.StandardButton.Yes:
-            self.baseline = self.getMeasurement()
-            self.calibration_counter += 1
-            self.addCalibrationMeasurement(self.baseline)
-            self.old_data.clear()
 
-        self.plot()
+        if button == QMessageBox.StandardButton.Yes:
+            # if this is the first calibration, enable certain buttons
+            if self.current_calibration_counter == 0:
+                self.clearCalibrationBtn.setEnabled(True)
+                self.regularMeasurementBtn.setEnabled(True)
+                self.regularMeasurementBtn.setToolTip("")
+
+            self.baseline = self.getMeasurement()
+            self.current_calibration_counter += 1
+            self.total_calibration_counter += 1
+            self.storeMeasurement(self.baseline, calibrated_measurement=True)
+
+            # after a calibration calibration the plot is cleared
+            self.scatter2d.plot()
 
     def clearCalibration(self) -> None:
         self.baseline = None
-        self.plot(self.old_data[-1])
+        # after a calibration calibration the plot is cleared
+        self.twoDPlottedList.clear()
+        self.scatter2d.clear()
 
-    def listToString(self, data: List[float]) -> str:
-        return " ".join([f"{i:.4f}" for i in data])
+    def tableChanged(self, item):
+        # if it was a label that changed, add it to the list of labels
+        if item.column() == 0:
+            name = item.text()
+            if name not in self.sample_names:
+                self.sample_names.add(name)
+                self.sampleNameSelection.addItem(name)
+        # if it was a material that changed, add it to the list of materials
+        elif item.column() == 1:
+            name = item.text()
+            if name not in self.sample_materials:
+                self.sample_materials.append(name)
+                self.sampleMaterialSelection.addItem(name)
+
+        # also update the change in the dataframe
+        if not self.currently_storing:
+            column = item.column()
+            # the header of the dataframe contains the `DateTime` header which is not
+            # present in the table, and has te be compensated for
+            if column >= 4:
+                column -= 1
+            self.df.loc[item.row(), self.DF_HEADER[column]] = item.text()
+
+    def load_dataset_online(self):
+        QMessageBox.information(
+            self, "loading dataset", f"Dataset is loaded from url:\n{self.DATASET_URL}"
+        )
+        self.loadDataset(self.DATASET_URL)
+
+    def load_dataset_local(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load dataset",
+            "",
+            "CSV (*.csv);;All Files (*)",
+        )
+        if not filename:
+            QMessageBox.information(self, "loading dataset", "No file was selected")
+        else:
+            self.loadDataset(filename)
+
+    def _loadDatasetWarning(self) -> bool:
+        """returns true if user is sure"""
+        button = QMessageBox.warning(
+            self,
+            "Load dataset",
+            "You are about to overwrite the data that is displayed by the table.\nAre you sure you want to overwrite?",
+            QMessageBox.Yes,
+            QMessageBox.No,
+        )
+        return button == QMessageBox.Yes
+
+    def _loadDatasetWarningReally(self) -> bool:
+        button = QMessageBox.warning(
+            self,
+            "Load dataset",
+            "Are you really sure?",
+            QMessageBox.Yes,
+            QMessageBox.No,
+        )
+        return button == QMessageBox.Yes
+
+    def loadDataset(self, dataset_path: str):
+        """load a dataset to continue where that dataset last left off"""
+        # give warnings that there is data and it will get overwritten
+        if len(self.df) > 0:
+            if not (self._loadDatasetWarning() and self._loadDatasetWarningReally()):
+                return
+
+        new_df = pd.read_csv(
+            dataset_path, index_col="Reading", dtype=self.DF_HEADER_DTYPES
+        )
+        if list(new_df.columns) != self.DF_HEADER:
+            QMessageBox.critical(
+                self,
+                "Load dataset",
+                "Dataset could not be loaded because of unexpected columns\n\n"
+                + f"columns of new dataset:\n {new_df.columns}\n\n"
+                + f"expected columns for a dataset:\n {self.DF_HEADER}\n\n"
+                + "COULD NOT LOAD NEW DATASET!\n\n"
+                + "For help, please contact the PlasticScanner Team",
+            )
+            return
+
+        self.df = new_df
+
+        ## clear plots
+        # clear 3d plot
+        self.scatter3d.clear()
+        # build the datastructure needed for 3dplot
+        self.scatter3d.unique_series = {
+            material: {} for material in self.df["PlasticType"].unique()
+        }
+        for _, row in self.df.iterrows():
+            name = row["Name"]
+            material = row["PlasticType"]
+            if name not in self.scatter3d.unique_series[material]:
+                self.scatter3d.unique_series[material][name] = {"data": []}
+
+            self.scatter3d.unique_series[material][name]["data"].append(
+                row[self.SCATTER3D_AXIS_OPTIONS]
+            )
+
+        # clear 2d plot and histogram
+        self.scatter2d.clear()
+        self.histogram.clear()
+
+        ## reset variables
+        # reset calibration counter
+        self.sample_names = set(self.df["Name"])
+        self.sample_colors = set(self.df["Color"])
+        self.sample_materials = self.DEFAULT_SAMPLE_MATERIALS.copy()
+        self.sample_materials.extend(
+            list(set(self.df["PlasticType"]) - set(self.sample_materials))
+        )
+        self.current_calibration_counter = 0
+        self.total_calibration_counter = 0
+        self.clearCalibration()
+
+        ## write dataframe to table
+        # clear table an variable
+        self.table.clearContents()
+        self.table.setRowCount(0)
+        self.tableRowLabels = []
+        # build table
+        for idx, row in self.df.iterrows():
+            name = row["Name"] if isinstance(row["Name"], str) else ""
+            plasticType = (
+                row["PlasticType"] if isinstance(row["PlasticType"], str) else ""
+            )
+            color = row["Color"] if isinstance(row["Color"], str) else ""
+            if row["MeasurementType"] == "calibration":
+                self.total_calibration_counter += 1
+                self.addToTable(
+                    row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
+                    name=name,
+                    material=plasticType,
+                    color=color,
+                    calibrated_measurement=True,
+                )
+            else:
+                self.addToTable(
+                    row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
+                    name=name,
+                    material=plasticType,
+                    color=color,
+                    calibrated_measurement=False,
+                )
+
+        self.scatter2d.plot()
+        self.scatter3d.plot()
 
     def exportCsv(self) -> None:
-        fname, _ = QFileDialog.getSaveFileName(self, "Save File")
-        with open(fname, "w", newline="") as csvfile:
-            rows = self.table.rowCount()
-            cols = self.table.columnCount()
-            writer = csv.writer(csvfile)
-            writer.writerow(self.wavelengths)
-            for i in range(rows):
-                row = []
-                for j in range(cols):
-                    try:
-                        val = self.table.item(i, j).text()
-                    except AttributeError:  # sometimes table.item() returns None - bug in fw/serial comm?
-                        val = ""
-                    row.append(val)
-                writer.writerow(row)
-
-    def plot(self, data: Optional[List[float]] = None) -> None:
-        self.pw.clear()
-
-        # add the baseline of the last calibration
-        if self.baseline is not None:
-            pc = self.pw.plot(self.wavelengths, self.baseline, pen=(255, 0, 0))
-
-        for dat in self.old_data:
-            pc = self.pw.plot(
-                self.wavelengths, dat, pen=(0, 100, 0), symbolBrush=(0, 255, 0)
-            )
-            pc.setSymbol("x")
-
-        lineC = tuple(
-            self.pw.palette().color(QPalette.ColorRole.WindowText).getRgb()[:-1]
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save File",
+            "",
+            "CSV(*.csv);;All Files(*)",
         )
-        markC = tuple(
-            self.pw.palette().color(QPalette.ColorRole.Highlight).getRgb()[:-1]
-        )
-        pen = pg.mkPen(color=lineC, symbolBrush=markC, symbolPen="o", width=2)
-        if data is not None:
-            pc = self.pw.plot(self.wavelengths, data, pen=pen)
-            pc.setSymbol("o")
-
-        if self.axisAutoRestoreChbx.isChecked():
-            self.restoreAxisPlot()
-        if self.axisAutoRangeChbx.isChecked():
-            self.centerAxisPlot()
+        if not fname:
+            QMessageBox.information(self, "saving dataset", "No file was selected")
+        else:
+            if "." not in fname:
+                fname = fname + ".csv"
+            self.df.to_csv(fname, index_label="Reading")
 
 
 if __name__ == "__main__":
     print(f"App is running on QT version {QT_VERSION_STR}")
+    app = pg.mkQApp()
+
     # this should add some optimisations for high-DPI screens
     # https://pyqtgraph.readthedocs.io/en/latest/how_to_use.html#hidpi-displays
-    app = pg.mkQApp()
+    QT_version = float("".join(QT_VERSION_STR.split(".")[:2]))
+    if QT_version >= 5.14 and QT_version < 6:
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+        app.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+    elif QT_version >= 5.14 and QT_version < 5.14:
+        app.setAttribute(Qt.AA_EnableHighDpiScaling)
+        app.setAttribute(Qt.AA_UseHighDpiPixmaps)
+    pg.setConfigOptions(antialias=True)  # , crashWarning=True)
+
+    app.setStyle("Fusion")
     window = PsPlot()
     window.show()
     app.exec()
