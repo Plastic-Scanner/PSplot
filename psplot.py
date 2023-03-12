@@ -84,7 +84,7 @@ class PsPlot(QMainWindow):
         self.setWindowIcon(QIcon("ps_logo.png"))
 
         # HARDCODED SETTINGS
-        self.WAVELENGHTS = [
+        self.WAVELENGTHS = [
             940,
             1050,
             1200,
@@ -101,10 +101,10 @@ class PsPlot(QMainWindow):
 
         # the names of the columns of the table
         self.TABLE_HEADER = ["name", "material", "color"] + [
-            str(x) for x in self.WAVELENGHTS
+            str(x) for x in self.WAVELENGTHS
         ]
         # the columns of the dataframe that are represented in the table
-        self.TABLE_DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in self.WAVELENGHTS]
+        self.TABLE_DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in self.WAVELENGTHS]
 
         # the headers for the dataframe:
         # |  Reading                |   the how many'th measurement                   |
@@ -122,9 +122,9 @@ class PsPlot(QMainWindow):
                 "MeasurementType",
                 "DateTime",
             ]
-            + [f"nm{x}" for x in self.WAVELENGHTS]
-            + [f"nm{x}_snv" for x in self.WAVELENGHTS]
-            + [f"nm{x}_norm" for x in self.WAVELENGHTS]
+            + [f"nm{x}" for x in self.WAVELENGTHS]
+            + [f"nm{x}_snv" for x in self.WAVELENGTHS]
+            + [f"nm{x}_norm" for x in self.WAVELENGTHS]
         )
         self.DF_HEADER_DTYPES = (
             {
@@ -134,17 +134,17 @@ class PsPlot(QMainWindow):
                 "MeasurementType": str,
                 "DateTime": str,
             }
-            | {f"nm{x}": float for x in self.WAVELENGHTS}
-            | {f"nm{x}_snv": float for x in self.WAVELENGHTS}
-            | {f"nm{x}_norm": float for x in self.WAVELENGHTS}
+            | {f"nm{x}": float for x in self.WAVELENGTHS}
+            | {f"nm{x}_snv": float for x in self.WAVELENGTHS}
+            | {f"nm{x}_norm": float for x in self.WAVELENGTHS}
         )
         # the columns of the dataframe that are used for the classifier model
-        self.PREDICTION_HEADERS = [f"nm{x}" for x in self.WAVELENGHTS]
+        self.PREDICTION_HEADERS = [f"nm{x}" for x in self.WAVELENGTHS]
 
         self.SCATTER3D_AXIS_OPTIONS = (
-            [f"nm{x}" for x in self.WAVELENGHTS]
-            + [f"nm{x}_snv" for x in self.WAVELENGHTS]
-            + [f"nm{x}_norm" for x in self.WAVELENGHTS]
+            [f"nm{x}" for x in self.WAVELENGTHS]
+            + [f"nm{x}_snv" for x in self.WAVELENGTHS]
+            + [f"nm{x}_norm" for x in self.WAVELENGTHS]
         )
 
         self.SCATTER3D_AXIS_VAR_X_DEFAULT = "nm1050_norm"
@@ -215,7 +215,7 @@ class PsPlot(QMainWindow):
         self.twoDPlottedList = []
         # to keep track of the amount of calibrations done in the current session
         self.current_calibration_counter = 0
-        # the amount of calibrations done in the current session + the previouse sessions
+        # the amount of calibrations done in the current session + the previous sessions
         self.total_calibration_counter = 0
         # holds labels for each row of the table, calibration rows are labeled differently
         self.tableRowLabels = []
@@ -422,7 +422,7 @@ class PsPlot(QMainWindow):
 
         elif e.key() == Qt.Key.Key_Home:
             self.scatter2d._plotWidget.setXRange(
-                self.WAVELENGHTS[0], self.WAVELENGHTS[-1], padding=0.1
+                self.WAVELENGTHS[0], self.WAVELENGTHS[-1], padding=0.1
             )
             self.scatter2d._plotWidget.setYRange(
                 self.yMin, self.yMax, padding=self.yPadding

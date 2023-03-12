@@ -70,10 +70,10 @@ class ScatterPlot2D(QVBoxLayout):
         pc = self._plotWidget.plot()
         pc.setSymbol("o")
 
-        xPadding = min(self._parent.WAVELENGHTS) * 0.1
+        xPadding = min(self._parent.WAVELENGTHS) * 0.1
         self._plotItem.setLimits(
-            xMin=min(self._parent.WAVELENGHTS) - xPadding,
-            xMax=max(self._parent.WAVELENGHTS) + xPadding,
+            xMin=min(self._parent.WAVELENGTHS) - xPadding,
+            xMax=max(self._parent.WAVELENGTHS) + xPadding,
         )
 
         # self.twoDPlotItem.setLabel("left", "NIR output", units="V", unitPrefix="m")
@@ -83,7 +83,7 @@ class ScatterPlot2D(QVBoxLayout):
         self._plotItem.setTitle("Reflectance")
 
         self._plotWidget.setXRange(
-            self._parent.WAVELENGHTS[0], self._parent.WAVELENGHTS[-1], padding=0.1
+            self._parent.WAVELENGTHS[0], self._parent.WAVELENGTHS[-1], padding=0.1
         )
 
     def _init_button_control(self):
@@ -148,7 +148,7 @@ class ScatterPlot2D(QVBoxLayout):
         if self._parent.baseline is not None:
             normalized_baseline = [1] * len(self._parent.baseline)
             pc = self._plotWidget.plot(
-                self._parent.WAVELENGHTS, normalized_baseline, pen=(255, 0, 0)
+                self._parent.WAVELENGTHS, normalized_baseline, pen=(255, 0, 0)
             )
             self._parent.twoDPlottedList.append(normalized_baseline)
 
@@ -157,7 +157,7 @@ class ScatterPlot2D(QVBoxLayout):
                 dat = normalize(dat, self._parent.baseline)
             self._parent.twoDPlottedList.append(dat)
             pc = self._plotWidget.plot(
-                self._parent.WAVELENGHTS,
+                self._parent.WAVELENGTHS,
                 dat,
                 pen=(0, 100, 0),
                 symbolBrush=(0, 255, 0),
@@ -174,7 +174,7 @@ class ScatterPlot2D(QVBoxLayout):
         if data is not None:
             if self._parent.baseline is not None:
                 data = normalize(data, self._parent.baseline)
-            pc = self._plotWidget.plot(self._parent.WAVELENGHTS, data, pen=pen)
+            pc = self._plotWidget.plot(self._parent.WAVELENGTHS, data, pen=pen)
             pc.setSymbol("o")
 
         self._changing_plot = False
