@@ -81,7 +81,7 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowIcon(QIcon("ps_logo.png"))
+        self.setWindowIcon(QIcon("./resources/ps_logo.png"))
 
         # HARDCODED SETTINGS
         self.WAVELENGTHS = [

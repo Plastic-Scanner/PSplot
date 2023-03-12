@@ -1,8 +1,8 @@
 <div align="center">
-  <a href="[https://mintlify.com](https://plasticscanner.com/)">
+  <a href="https://plasticscanner.com/">
     <img
-      src="https://plasticscanner.com/wp-content/uploads/2020/12/logo3-01.png"
-      alt="Plastic Scanner Logo"
+      src="https://github.com/JoostScheffer/PSplot/blob/main/resources/psplot_logo.svg"
+      alt="PSplot logo"
       height="64"
     />
   </a>
@@ -35,7 +35,7 @@ Use `exit` or Ctrl+D to exit pipenv shell
 ## Usage
 The interface is divided up in 3 sections
 ### Data in/out
-Here you can select your [developement board](https://docs.plasticscanner.com/), if no COM port is available/selected it will use dummy data (to help the developers!)
+Here you can select your developement board, if no COM port is available/selected it will use dummy data (to help the developers!)
 You can also import or export data to load previous dataset or to export your data once you are done.
 
 ### Measuring
@@ -53,4 +53,4 @@ The last section shows the visualisation of the measurement. It has four section
 
 
 ## Contributing
-Feel free to improve, modify and contribute to this project. It's part of the [Plastic Scanner](plasticscanner.com) open source hardware development, check out the [docs](docs.plasticscanner.com) as well!
+Feel free to improve, modify and contribute to this project. It's part of the [Plastic Scanner](https://plasticscanner.com/) open source hardware development, check out the [docs](https://docs.plasticscanner.com/) as well!
