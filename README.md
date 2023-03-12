@@ -1,7 +1,7 @@
 <div align="center">
   <a href="https://plasticscanner.com/">
     <img
-      src="https://github.com/JoostScheffer/PSplot/blob/main/resources/psplot_logo.svg"
+      src="https://github.com/Plastic-Scanner/PSplot/blob/main/resources/ps_logo.png"
       alt="PSplot logo"
       height="64"
     />
