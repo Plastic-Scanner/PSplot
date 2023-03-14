@@ -81,7 +81,7 @@ class Table(QTableWidget):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowIcon(QIcon("ps_logo.png"))
+        self.setWindowIcon(QIcon("./resources/ps_logo.png"))
 
         # HARDCODED SETTINGS
         self.WAVELENGTHS = [
@@ -100,9 +100,7 @@ class PsPlot(QMainWindow):
         self.serial = None
 
         # the names of the columns of the table
-        self.TABLE_HEADER = ["name", "material", "color"] + [
-            str(x) for x in self.WAVELENGTHS
-        ]
+        self.TABLE_HEADER = ["name", "material", "color"] + [str(x) for x in self.WAVELENGTHS]
         # the columns of the dataframe that are represented in the table
         self.TABLE_DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in self.WAVELENGTHS]
 
@@ -185,7 +183,7 @@ class PsPlot(QMainWindow):
         self.df = pd.DataFrame(columns=self.DF_HEADER)
 
         # classifier model used to predict type of plastic
-        self.clf = joblib.load("model.joblib")
+        self.clf = joblib.load("./resources/model.joblib")
 
         # keeps track of all of the samples that have been measured
         self.DEFAULT_SAMPLE_MATERIALS = [
@@ -325,12 +323,8 @@ class PsPlot(QMainWindow):
         self.clearCalibrationBtn.setDisabled(True)
 
         # the next two buttons will be enabled after a calibration has been performed
-        self.regularMeasurementBtn = QPushButton(
-            "Take measurement\n(shortcut: spacebar)"
-        )
-        self.regularMeasurementBtn.setToolTip(
-            "a calibration measurement needs to be taken first"
-        )
+        self.regularMeasurementBtn = QPushButton("Take measurement\n(shortcut: spacebar)")
+        self.regularMeasurementBtn.setToolTip("a calibration measurement needs to be taken first")
         self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
         # comment out the next line in case you only want to allow measurements after a calibration
         # self.regularMeasurementBtn.setDisabled(True)
@@ -406,27 +400,17 @@ class PsPlot(QMainWindow):
         if e.key() == Qt.Key.Key_Q:
             self.close()
 
-        elif (
-            e.key() == Qt.Key.Key_Up
-            or e.key() == Qt.Key.Key_W
-            or e.key() == Qt.Key.Key_Plus
-        ):
+        elif e.key() == Qt.Key.Key_Up or e.key() == Qt.Key.Key_W or e.key() == Qt.Key.Key_Plus:
             self.scatter2d._viewBox.scaleBy((1, 0.9))
 
-        elif (
-            e.key() == Qt.Key.Key_Down
-            or e.key() == Qt.Key.Key_S
-            or e.key() == Qt.Key.Key_Minus
-        ):
+        elif e.key() == Qt.Key.Key_Down or e.key() == Qt.Key.Key_S or e.key() == Qt.Key.Key_Minus:
             self.scatter2d._viewBox.scaleBy((1, 1.1))
 
         elif e.key() == Qt.Key.Key_Home:
             self.scatter2d._plotWidget.setXRange(
                 self.WAVELENGTHS[0], self.WAVELENGTHS[-1], padding=0.1
             )
-            self.scatter2d._plotWidget.setYRange(
-                self.yMin, self.yMax, padding=self.yPadding
-            )
+            self.scatter2d._plotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         elif e.key() == Qt.Key.Key_Space:
             self.takeRegularMeasurement()
@@ -652,18 +636,14 @@ class PsPlot(QMainWindow):
         dataStr = list_to_string(data)
         for col, val in enumerate(dataStr.split(), start=3):
             cell = QTableWidgetItem(val)
-            cell.setFlags(
-                cell.flags() & ~Qt.ItemFlag.ItemIsEditable
-            )  # disable editing of cells
+            cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)  # disable editing of cells
 
             # use a different color if the measurement was taken for calibration
             self.table.setItem(nRows, col, cell)
 
         if calibrated_measurement:
             for column in range(self.table.columnCount()):
-                self.table.item(nRows, column).setBackground(
-                    self.palette().alternateBase().color()
-                )
+                self.table.item(nRows, column).setBackground(self.palette().alternateBase().color())
 
         self.table.scrollToBottom()
 
@@ -762,9 +742,7 @@ class PsPlot(QMainWindow):
             if not (self._loadDatasetWarning() and self._loadDatasetWarningReally()):
                 return
 
-        new_df = pd.read_csv(
-            dataset_path, index_col="Reading", dtype=self.DF_HEADER_DTYPES
-        )
+        new_df = pd.read_csv(dataset_path, index_col="Reading", dtype=self.DF_HEADER_DTYPES)
         if list(new_df.columns) != self.DF_HEADER:
             QMessageBox.critical(
                 self,
@@ -805,9 +783,7 @@ class PsPlot(QMainWindow):
         self.sample_names = set(self.df["Name"])
         self.sample_colors = set(self.df["Color"])
         self.sample_materials = self.DEFAULT_SAMPLE_MATERIALS.copy()
-        self.sample_materials.extend(
-            list(set(self.df["PlasticType"]) - set(self.sample_materials))
-        )
+        self.sample_materials.extend(list(set(self.df["PlasticType"]) - set(self.sample_materials)))
         self.current_calibration_counter = 0
         self.total_calibration_counter = 0
         self.clearCalibration()
@@ -820,9 +796,7 @@ class PsPlot(QMainWindow):
         # build table
         for _idx, row in self.df.iterrows():
             name = row["Name"] if isinstance(row["Name"], str) else ""
-            plasticType = (
-                row["PlasticType"] if isinstance(row["PlasticType"], str) else ""
-            )
+            plasticType = row["PlasticType"] if isinstance(row["PlasticType"], str) else ""
             color = row["Color"] if isinstance(row["Color"], str) else ""
             if row["MeasurementType"] == "calibration":
                 self.total_calibration_counter += 1
@@ -869,9 +843,7 @@ if __name__ == "__main__":
     QT_version = float("".join(QT_VERSION_STR.split(".")[:2]))
     if QT_version >= 5.14 and QT_version < 6:
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-        app.setHighDpiScaleFactorRoundingPolicy(
-            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-        )
+        app.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     elif QT_version >= 5.14 and QT_version < 5.14:
         app.setAttribute(Qt.AA_EnableHighDpiScaling)
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
