@@ -199,8 +199,7 @@ class ScatterPlot3D(QVBoxLayout):
 
     def _init_variables(self):
         self._axis_options_index_map = {
-            name: index
-            for index, name in enumerate(self._parent.SCATTER3D_AXIS_OPTIONS)
+            name: index for index, name in enumerate(self._parent.SCATTER3D_AXIS_OPTIONS)
         }
         self._axis_var_x = self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT
         self._axis_var_z = self._parent.SCATTER3D_AXIS_VAR_Y_DEFAULT
@@ -220,27 +219,34 @@ class ScatterPlot3D(QVBoxLayout):
         #         }
         #     }
         # }
-        self.unique_series = {
-            material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS
-        }
+        self.unique_series = {material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS}
 
     def _init_plot_widget(self):
         self._graph = Q3DScatter()
         self._plotWidget = QWidget.createWindowContainer(self._graph)
 
+        self._graph.setHorizontalAspectRatio(1.0)
+        self._graph.setAspectRatio(1.0)
         self._graph.setOrthoProjection(True)
-        self._graph.scene().activeCamera().setCameraPreset(
-            Q3DCamera.CameraPresetIsometricLeft
-        )
+        self._graph.scene().activeCamera().setCameraPreset(Q3DCamera.CameraPresetIsometricLeft)
+
         self._graph.axisX().setTitle(self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT)
         self._graph.axisX().setTitleVisible(True)
-        self._graph.axisX().setLabelFormat("%.4f")
+        self._graph.axisX().setLabelAutoRotation(90)
+        self._graph.axisX().setTitleFixed(False)
+        self._graph.axisX().setLabelFormat("")
+
         self._graph.axisY().setTitle(self._parent.SCATTER3D_AXIS_VAR_Y_DEFAULT)
         self._graph.axisY().setTitleVisible(True)
-        self._graph.axisY().setLabelFormat("%.4f")
+        self._graph.axisY().setLabelAutoRotation(90)
+        self._graph.axisY().setTitleFixed(False)
+        self._graph.axisY().setLabelFormat("")
+
         self._graph.axisZ().setTitle(self._parent.SCATTER3D_AXIS_VAR_Z_DEFAULT)
         self._graph.axisZ().setTitleVisible(True)
-        self._graph.axisZ().setLabelFormat("%.4f")
+        self._graph.axisZ().setLabelAutoRotation(90)
+        self._graph.axisZ().setTitleFixed(False)
+        self._graph.axisZ().setLabelFormat("")
 
         # styling
         self._graph.setShadowQuality(QAbstract3DGraph.ShadowQuality(0))
@@ -264,7 +270,7 @@ class ScatterPlot3D(QVBoxLayout):
         currentTheme.setFont(font)
 
     def _init_button_control(self):
-        ## legend
+        # legend
         self._legendLayout = QHBoxLayout()
         self._legend_buttons = {}
         for name, color in self._parent.SCATTER3D_COLOR_MAP.items():
@@ -304,7 +310,7 @@ class ScatterPlot3D(QVBoxLayout):
             self._legendLayout.addWidget(button)
             self._legend_buttons[name] = button
 
-        ## buttons
+        # buttons
         self._axXSelection = QComboBox()
         self._axXSelection.addItems(self._parent.SCATTER3D_AXIS_OPTIONS)
         self._axXSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT)
@@ -357,9 +363,7 @@ class ScatterPlot3D(QVBoxLayout):
                 series = self.unique_series[material][id]["series"]
                 self._graph.removeSeries(series)
 
-        self.unique_series = {
-            material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS
-        }
+        self.unique_series = {material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS}
 
     def plot(self, axis_changed: bool = False):
         """axis_changed: true if the variable of
@@ -400,8 +404,7 @@ class ScatterPlot3D(QVBoxLayout):
 
                 if self._legend_buttons[material_name].isChecked():
                     if (
-                        len(self.unique_series[material][id]["data"])
-                        > len(proxy.array())
+                        len(self.unique_series[material][id]["data"]) > len(proxy.array())
                         or axis_changed
                     ):
                         # if none of the datapoints are None
@@ -435,18 +438,10 @@ class ScatterPlot3D(QVBoxLayout):
                                     print(
                                         "WARNING: trying to plot point on normalized axis while non normalized data is present!"
                                     )
-                                    print(
-                                        "\tSWITCHING TO DISPLAYING NON NORMALIZED DATA..."
-                                    )
-                                    self._axis_var_x = (
-                                        self._axis_var_x.rstrip("_norm") + "_snv"
-                                    )
-                                    self._axis_var_y = (
-                                        self._axis_var_y.rstrip("_norm") + "_snv"
-                                    )
-                                    self._axis_var_z = (
-                                        self._axis_var_z.rstrip("_norm") + "_snv"
-                                    )
+                                    print("\tSWITCHING TO DISPLAYING NON NORMALIZED DATA...")
+                                    self._axis_var_x = self._axis_var_x.rstrip("_norm") + "_snv"
+                                    self._axis_var_y = self._axis_var_y.rstrip("_norm") + "_snv"
+                                    self._axis_var_z = self._axis_var_z.rstrip("_norm") + "_snv"
                                     self._axXSelection.setCurrentText(self._axis_var_x)
                                     self._axYSelection.setCurrentText(self._axis_var_y)
                                     self._axZSelection.setCurrentText(self._axis_var_z)
@@ -571,9 +566,7 @@ class Histogram(QVBoxLayout):
         if self._disableBtn.isChecked():
             return
 
-        data = self._parent.df.loc[
-            len(self._parent.df) - 1, self._parent.PREDICTION_HEADERS
-        ]
+        data = self._parent.df.loc[len(self._parent.df) - 1, self._parent.PREDICTION_HEADERS]
         data = pd.DataFrame([data], columns=self._parent.PREDICTION_HEADERS)
         prediction = {
             plastic: self._parent.clf.predict_proba(data)[0][idx] * 100
