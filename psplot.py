@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from datetime import datetime
-from typing import List, Union
+from typing import List
 from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
 from helper_functions import normalize, SNV_transform, list_to_string
 import joblib
@@ -172,13 +172,12 @@ class PsPlot(QMainWindow):
             "other",
             "unknown",
         ]
-        self.SCATTER3D_COLOR_MAP = {
-            x: y
-            for x, y in zip(
+        self.SCATTER3D_COLOR_MAP = dict(
+            zip(
                 self.SCATTER3D_ALLOWED_MATERIALS,
                 self.COLOR_TABLEAU,
             )
-        }
+        )
 
         self.df = pd.DataFrame(columns=self.DF_HEADER)
 
@@ -199,7 +198,7 @@ class PsPlot(QMainWindow):
         self.sample_materials = self.DEFAULT_SAMPLE_MATERIALS.copy()
 
         # holds the calibration measurement
-        self.baseline: Union[NoneType, List[float]] = None
+        self.baseline: NoneType | List[float] = None
 
         self.sample_colors = {""}
         self.sample_names = {""}
@@ -218,7 +217,7 @@ class PsPlot(QMainWindow):
         # holds labels for each row of the table, calibration rows are labeled differently
         self.tableRowLabels = []
 
-        ## setting up the UI elements
+        # setting up the UI elements
         # input output (selecting serial and saving)
         self._setupInOutUI()
         # taking a measurement
@@ -237,7 +236,7 @@ class PsPlot(QMainWindow):
         self.graphLayout.addLayout(self.scatter3d, 50)
         self.graphLayout.addLayout(self.histogram, 50)
 
-        ## Table to display output
+        # Table to display output
         self.table = Table()
         self.table.setColumnCount(len(self.TABLE_HEADER))
         self.table.setHorizontalHeaderLabels(self.TABLE_HEADER)
@@ -246,7 +245,7 @@ class PsPlot(QMainWindow):
         self.table.setColumnWidth(0, 200)
         self.table.setColumnWidth(1, 200)
 
-        ## add all layouts to mainLayout
+        # add all layouts to mainLayout
         # Container widget
         self.widget = QWidget(self)
         self.setCentralWidget(self.widget)
@@ -326,7 +325,7 @@ class PsPlot(QMainWindow):
         self.regularMeasurementBtn = QPushButton("Take measurement\n(shortcut: spacebar)")
         self.regularMeasurementBtn.setToolTip("a calibration measurement needs to be taken first")
         self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
-        # comment out the next line in case you only want to allow measurements after a calibration
+        # enable the next line in case you only want to allow measurements after a calibration
         # self.regularMeasurementBtn.setDisabled(True)
 
         # sample material
@@ -336,9 +335,6 @@ class PsPlot(QMainWindow):
         self.sampleMaterialSelection = QComboBox()
         self.sampleMaterialSelection.setDuplicatesEnabled(False)
         self.sampleMaterialSelection.setEditable(True)
-        # self.sampleMaterialSelection.currentIndexChanged.connect(
-        #     self.sampleMaterialSelectionChanged
-        # )
         self.sampleMaterialSelection.setPlaceholderText("select material")
         self.sampleMaterialSelection.addItems(sorted(self.sample_materials))
         self.sampleMaterialSelection.setCurrentText("unknown")
@@ -351,9 +347,6 @@ class PsPlot(QMainWindow):
         self.sampleNameSelection.setDuplicatesEnabled(False)
         self.sampleNameSelection.setEditable(True)
         self.sampleNameSelection.addItem("")
-        # self.sampleNameSelection.currentIndexChanged.connect(
-        #     self.sampleNameSelectionChanged
-        # )
         self.sampleNameSelection.setPlaceholderText("select sample name")
 
         # sample color
@@ -364,9 +357,6 @@ class PsPlot(QMainWindow):
         self.sampleColorSelection.setDuplicatesEnabled(False)
         self.sampleColorSelection.setEditable(True)
         self.sampleColorSelection.addItem("")
-        # self.sampleColorSelection.currentIndexChanged.connect(
-        #     self.sampleColorSelectionChanged
-        # )
         self.sampleColorSelection.setPlaceholderText("select sample name")
 
         self.calibrationLayout = QHBoxLayout()
@@ -560,7 +550,7 @@ class PsPlot(QMainWindow):
             color,
             calibrated_measurement,
         )
-        self.addToTable(
+        self.add_to_table(
             data,
             name,
             material,
@@ -584,7 +574,7 @@ class PsPlot(QMainWindow):
         self,
         data: List[float],
         data_snv: List[float],
-        data_normalized: List[Union[float, None]],
+        data_normalized: List[float | None],
         name: str = "",
         material: str = "unknown",
         color: str = "",
@@ -606,7 +596,7 @@ class PsPlot(QMainWindow):
             *data_normalized,
         ]
 
-    def addToTable(
+    def add_to_table(
         self,
         data: List[float],
         name: str = "",
@@ -636,7 +626,8 @@ class PsPlot(QMainWindow):
         dataStr = list_to_string(data)
         for col, val in enumerate(dataStr.split(), start=3):
             cell = QTableWidgetItem(val)
-            cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)  # disable editing of cells
+            # disable editing of cells
+            cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             # use a different color if the measurement was taken for calibration
             self.table.setItem(nRows, col, cell)
@@ -714,18 +705,19 @@ class PsPlot(QMainWindow):
         else:
             self.loadDataset(filename)
 
-    def _loadDatasetWarning(self) -> bool:
+    def _load_dataset_warning(self) -> bool:
         """returns true if user is sure"""
         button = QMessageBox.warning(
             self,
             "Load dataset",
-            "You are about to overwrite the data that is displayed by the table.\nAre you sure you want to overwrite?",
+            "You are about to overwrite the data that is displayed by the table."
+            + "\nAre you sure you want to overwrite?",
             QMessageBox.Yes,
             QMessageBox.No,
         )
         return button == QMessageBox.Yes
 
-    def _loadDatasetWarningReally(self) -> bool:
+    def _load_dataset_warning_really(self) -> bool:
         button = QMessageBox.warning(
             self,
             "Load dataset",
@@ -739,7 +731,7 @@ class PsPlot(QMainWindow):
         """load a dataset to continue where that dataset last left off"""
         # give warnings that there is data and it will get overwritten
         if len(self.df) > 0:
-            if not (self._loadDatasetWarning() and self._loadDatasetWarningReally()):
+            if not (self._load_dataset_warning() and self._load_dataset_warning_really()):
                 return
 
         new_df = pd.read_csv(dataset_path, index_col="Reading", dtype=self.DF_HEADER_DTYPES)
@@ -757,7 +749,7 @@ class PsPlot(QMainWindow):
 
         self.df = new_df
 
-        ## clear plots
+        # clear plots
         # clear 3d plot
         self.scatter3d.clear()
         # build the datastructure needed for 3dplot
@@ -778,7 +770,7 @@ class PsPlot(QMainWindow):
         self.scatter2d.clear()
         self.histogram.clear()
 
-        ## reset variables
+        # reset variables
         # reset calibration counter
         self.sample_names = set(self.df["Name"])
         self.sample_colors = set(self.df["Color"])
@@ -788,7 +780,7 @@ class PsPlot(QMainWindow):
         self.total_calibration_counter = 0
         self.clearCalibration()
 
-        ## write dataframe to table
+        # write dataframe to table
         # clear table an variable
         self.table.clearContents()
         self.table.setRowCount(0)
@@ -800,7 +792,7 @@ class PsPlot(QMainWindow):
             color = row["Color"] if isinstance(row["Color"], str) else ""
             if row["MeasurementType"] == "calibration":
                 self.total_calibration_counter += 1
-                self.addToTable(
+                self.add_to_table(
                     row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
                     name=name,
                     material=plasticType,
@@ -808,7 +800,7 @@ class PsPlot(QMainWindow):
                     calibrated_measurement=True,
                 )
             else:
-                self.addToTable(
+                self.add_to_table(
                     row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
                     name=name,
                     material=plasticType,
@@ -834,7 +826,7 @@ class PsPlot(QMainWindow):
             self.df.to_csv(fname, index_label="Reading")
 
 
-if __name__ == "__main__":
+def main():
     print(f"App is running on QT version {QT_VERSION_STR}")
     app = pg.mkQApp()
 
@@ -849,7 +841,10 @@ if __name__ == "__main__":
         app.setAttribute(Qt.AA_UseHighDpiPixmaps)
     pg.setConfigOptions(antialias=True)  # , crashWarning=True)
 
-    app.setStyle("Fusion")
     window = PsPlot()
     window.show()
     app.exec()
+
+
+if __name__ == "__main__":
+    main()

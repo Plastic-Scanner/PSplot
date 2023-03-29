@@ -4,6 +4,7 @@ from PyQt5.QtGui import (
     QVector3D,
 )
 from PyQt5.QtWidgets import (
+    QBoxLayout,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -31,6 +32,7 @@ import pandas as pd
 
 # pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
+from abc import ABC, ABCMeta, abstractmethod
 
 
 from typing import TYPE_CHECKING
@@ -43,7 +45,25 @@ class WriteCoordinateError(Exception):
     pass
 
 
-class ScatterPlot2D(QVBoxLayout):
+class PlotLayoutMeta(ABCMeta, type(QBoxLayout)):
+    pass
+
+
+class PlotLayout(ABC, metaclass=PlotLayoutMeta):
+    @abstractmethod
+    def plot(self) -> None:
+        pass
+
+    @abstractmethod
+    def clear(self) -> None:
+        pass
+
+    @abstractmethod
+    def export(self) -> None:
+        pass
+
+
+class ScatterPlot2D(QVBoxLayout, PlotLayout):
     def __init__(self, parent: PsPlot):
         super().__init__()
         self._parent = parent
@@ -166,7 +186,6 @@ class ScatterPlot2D(QVBoxLayout):
         if data is not None:
             self.plot_history.append(data)
 
-        # TODO make this shorter (look how I did this elsewhere)
         line_color = tuple(self._parent.palette().text().color().getRgb())
         mark_color = tuple(self._parent.palette().highlight().color().getRgb())
 
@@ -183,9 +202,9 @@ class ScatterPlot2D(QVBoxLayout):
         return NotImplemented
 
 
-class ScatterPlot3D(QVBoxLayout):
+class ScatterPlot3D(QVBoxLayout, PlotLayout):
     def __init__(self, parent: PsPlot):
-        super().__init__(parent)
+        super().__init__()
         self._parent = parent
 
         self._init_variables()
@@ -462,7 +481,7 @@ class ScatterPlot3D(QVBoxLayout):
         return NotImplemented
 
 
-class Histogram(QVBoxLayout):
+class Histogram(QVBoxLayout, PlotLayout):
     def __init__(self, parent: PsPlot):
         super().__init__()
         self._parent = parent
@@ -490,13 +509,12 @@ class Histogram(QVBoxLayout):
         axis = self._plotWidget.getAxis("left")
         # the labels for the vertical axis, they are flipped because
         # humans read from top to bottom
-        vertical_axis = {
-            idx: name
-            for idx, name in enumerate(
+        vertical_axis = dict(
+            enumerate(
                 self._parent.clf.classes_[::-1],
                 start=1,
             )
-        }
+        )
         axis.setTicks([vertical_axis.items()])
         axis.setStyle(tickLength=0)
 
@@ -592,25 +610,23 @@ class Histogram(QVBoxLayout):
         if self._sortDefaultBtn.isChecked():
             # the labels for the vertical axis, they are flipped because
             # humans read from top to bottom
-            vertical_axis = {
-                idx: name
-                for idx, name in enumerate(
+            vertical_axis = dict(
+                enumerate(
                     self._parent.clf.classes_[::-1],
                     start=1,
                 )
-            }
+            )
         elif self._sortCertaintyBtn.isChecked():
             widths, names = map(
                 list,
                 zip(*sorted(zip(widths, self._parent.clf.classes_[::-1]))),
             )
-            vertical_axis = {
-                idx: name
-                for idx, name in enumerate(
+            vertical_axis = dict(
+                enumerate(
                     names,
                     start=1,
                 )
-            }
+            )
 
         axis.setTicks([vertical_axis.items()])
 

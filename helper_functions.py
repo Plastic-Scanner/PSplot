@@ -1,11 +1,11 @@
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import List, Union
+from typing import List
 
 
 def normalize(
     input_data: List[float],
-    calibration_data: Union[List[float], ArrayLike],
+    calibration_data: List[float] | ArrayLike,
 ) -> List[float]:
     """normalizes by dividing by `calibration_data` and also applies SNV_transform"""
     input_data = np.asarray(input_data)
@@ -19,7 +19,7 @@ def normalize(
     return list(data_snv)
 
 
-def SNV_transform(data: Union[ArrayLike, List[float]]) -> List[float]:
+def SNV_transform(data: ArrayLike | List[float]) -> List[float]:
     # the following is an SNV transform
     # Subtract the mean and divide by the standarddiviation
     return list((np.asarray(data) - np.mean(data)) / np.std(data))
