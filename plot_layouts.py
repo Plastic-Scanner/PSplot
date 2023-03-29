@@ -238,6 +238,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         #         }
         #     }
         # }
+        # TODO make this a dataclass or something smart
         self.unique_series = {material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS}
 
     def _init_plot_widget(self):

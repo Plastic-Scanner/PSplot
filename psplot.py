@@ -26,7 +26,8 @@ from PyQt5.QtWidgets import (
 from datetime import datetime
 from typing import List
 from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
-from helper_functions import normalize, SNV_transform, list_to_string
+from table_widget import Table
+from helper_functions import normalize, SNV_transform
 import joblib
 import os
 import pandas as pd
@@ -45,37 +46,6 @@ class ComboBox(QComboBox):
     def showPopup(self) -> None:
         self.onPopup.emit()
         super(ComboBox, self).showPopup()
-
-
-class Table(QTableWidget):
-    """
-    this class extends QTableWidget
-    * supports copying multiple cell's text onto the clipboard
-    * formatted specifically to work with multiple-cell paste into programs
-      like google sheets, excel, or numbers
-    Taken and modified from https://stackoverflow.com/a/68598423/5539470
-    """
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-
-    def keyPressEvent(self, event) -> None:
-        super().keyPressEvent(event)
-
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            if event.key() == Qt.Key.Key_C:
-                copied_cells = sorted(self.selectedIndexes())
-
-                copy_text = ""
-                max_column = copied_cells[-1].column()
-                for c in copied_cells:
-                    copy_text += self.item(c.row(), c.column()).text()
-                    if c.column() == max_column:
-                        copy_text += "\n"
-                    else:
-                        copy_text += "\t"
-
-                QApplication.clipboard().setText(copy_text)
 
 
 class PsPlot(QMainWindow):
@@ -214,8 +184,6 @@ class PsPlot(QMainWindow):
         self.current_calibration_counter = 0
         # the amount of calibrations done in the current session + the previous sessions
         self.total_calibration_counter = 0
-        # holds labels for each row of the table, calibration rows are labeled differently
-        self.tableRowLabels = []
 
         # setting up the UI elements
         # input output (selecting serial and saving)
@@ -238,12 +206,6 @@ class PsPlot(QMainWindow):
 
         # Table to display output
         self.table = Table()
-        self.table.setColumnCount(len(self.TABLE_HEADER))
-        self.table.setHorizontalHeaderLabels(self.TABLE_HEADER)
-        self.table.itemChanged.connect(self.tableChanged)
-        # make the first 2 columns extra wide
-        self.table.setColumnWidth(0, 200)
-        self.table.setColumnWidth(1, 200)
 
         # add all layouts to mainLayout
         # Container widget
@@ -318,7 +280,7 @@ class PsPlot(QMainWindow):
         self.calibrateBtn.clicked.connect(self.calibrate)
 
         self.clearCalibrationBtn = QPushButton("Clear Calibration")
-        self.clearCalibrationBtn.clicked.connect(self.clearCalibration)
+        self.clearCalibrationBtn.clicked.connect(self.clear_calibration)
         self.clearCalibrationBtn.setDisabled(True)
 
         # the next two buttons will be enabled after a calibration has been performed
@@ -596,48 +558,6 @@ class PsPlot(QMainWindow):
             *data_normalized,
         ]
 
-    def add_to_table(
-        self,
-        data: List[float],
-        name: str = "",
-        material: str = "unknown",
-        color: str = "",
-        calibrated_measurement: bool = False,
-    ) -> None:
-        nRows = self.table.rowCount()
-        # add a row
-        self.table.setRowCount(nRows + 1)
-
-        # add sample name as column 0
-        self.table.setItem(nRows, 0, QTableWidgetItem(name))
-        # add sample material as column 1
-        self.table.setItem(nRows, 1, QTableWidgetItem(material))
-        # add sample color as column 2
-        self.table.setItem(nRows, 2, QTableWidgetItem(color))
-
-        if calibrated_measurement:
-            self.tableRowLabels.append(f"c {self.total_calibration_counter}")
-            self.table.setItem(nRows, 1, QTableWidgetItem("spectralon"))
-        else:
-            self.tableRowLabels.append(str(nRows + 1 - self.total_calibration_counter))
-        self.table.setVerticalHeaderLabels(self.tableRowLabels)
-
-        # add value for every column of new row
-        dataStr = list_to_string(data)
-        for col, val in enumerate(dataStr.split(), start=3):
-            cell = QTableWidgetItem(val)
-            # disable editing of cells
-            cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-
-            # use a different color if the measurement was taken for calibration
-            self.table.setItem(nRows, col, cell)
-
-        if calibrated_measurement:
-            for column in range(self.table.columnCount()):
-                self.table.item(nRows, column).setBackground(self.palette().alternateBase().color())
-
-        self.table.scrollToBottom()
-
     def calibrate(self) -> None:
         button = QMessageBox.question(
             self, "Calibration", "Is the spectralon sample on the sensor?"
@@ -658,34 +578,11 @@ class PsPlot(QMainWindow):
             # after a calibration calibration the plot is cleared
             self.scatter2d.plot()
 
-    def clearCalibration(self) -> None:
+    def clear_calibration(self) -> None:
         self.baseline = None
         # after a calibration calibration the plot is cleared
         self.twoDPlottedList.clear()
         self.scatter2d.clear()
-
-    def tableChanged(self, item):
-        # if it was a label that changed, add it to the list of labels
-        if item.column() == 0:
-            name = item.text()
-            if name not in self.sample_names:
-                self.sample_names.add(name)
-                self.sampleNameSelection.addItem(name)
-        # if it was a material that changed, add it to the list of materials
-        elif item.column() == 1:
-            name = item.text()
-            if name not in self.sample_materials:
-                self.sample_materials.append(name)
-                self.sampleMaterialSelection.addItem(name)
-
-        # also update the change in the dataframe
-        if not self.currently_storing:
-            column = item.column()
-            # the header of the dataframe contains the `DateTime` header which is not
-            # present in the table, and has to be compensated for
-            if column >= 4:
-                column -= 1
-            self.df.loc[item.row(), self.DF_HEADER[column]] = item.text()
 
     def load_dataset_online(self):
         QMessageBox.information(
@@ -778,13 +675,10 @@ class PsPlot(QMainWindow):
         self.sample_materials.extend(list(set(self.df["PlasticType"]) - set(self.sample_materials)))
         self.current_calibration_counter = 0
         self.total_calibration_counter = 0
-        self.clearCalibration()
+        self.clear_calibration()
 
-        # write dataframe to table
         # clear table an variable
-        self.table.clearContents()
-        self.table.setRowCount(0)
-        self.tableRowLabels = []
+        self.table.clear()
         # build table
         for _idx, row in self.df.iterrows():
             name = row["Name"] if isinstance(row["Name"], str) else ""
@@ -792,7 +686,7 @@ class PsPlot(QMainWindow):
             color = row["Color"] if isinstance(row["Color"], str) else ""
             if row["MeasurementType"] == "calibration":
                 self.total_calibration_counter += 1
-                self.add_to_table(
+                self.table.append(
                     row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
                     name=name,
                     material=plasticType,
@@ -800,7 +694,7 @@ class PsPlot(QMainWindow):
                     calibrated_measurement=True,
                 )
             else:
-                self.add_to_table(
+                self.table.append(
                     row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
                     name=name,
                     material=plasticType,
