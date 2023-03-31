@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from __future__ import annotations
 from PyQt5.QtGui import (
     QColor,
@@ -26,8 +28,8 @@ from PyQt5.QtDataVisualization import (
     QScatterDataProxy,
 )
 from collections import deque
-from typing import List, Optional
 from helper_functions import normalize
+import settings
 import pandas as pd
 
 # pyqtgraph should always be imported after importing pyqt
@@ -42,14 +44,25 @@ if TYPE_CHECKING:
 
 
 class WriteCoordinateError(Exception):
+    """error for when user tries to manually set an inmutable variable"""
+
     pass
 
 
 class PlotLayoutMeta(ABCMeta, type(QBoxLayout)):
+    """metaclass for abstract base class for plot layouts"""
+
     pass
 
 
 class PlotLayout(ABC, metaclass=PlotLayoutMeta):
+    """abstract base class for all plot layouts
+    implements:
+        plot
+        clear
+        export
+    """
+
     @abstractmethod
     def plot(self) -> None:
         pass
@@ -64,6 +77,8 @@ class PlotLayout(ABC, metaclass=PlotLayoutMeta):
 
 
 class ScatterPlot2D(QVBoxLayout, PlotLayout):
+    """2d scatterplot layout, inherits plotlayout"""
+
     def __init__(self, parent: PsPlot):
         super().__init__()
         self._parent = parent
@@ -90,10 +105,10 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
         pc = self._plotWidget.plot()
         pc.setSymbol("o")
 
-        xPadding = min(self._parent.WAVELENGTHS) * 0.1
+        xPadding = min(settings.HARDWARE.WAVELENGTHS) * 0.1
         self._plotItem.setLimits(
-            xMin=min(self._parent.WAVELENGTHS) - xPadding,
-            xMax=max(self._parent.WAVELENGTHS) + xPadding,
+            xMin=min(settings.HARDWARE.WAVELENGTHS) - xPadding,
+            xMax=max(settings.HARDWARE.WAVELENGTHS) + xPadding,
         )
 
         # self.twoDPlotItem.setLabel("left", "NIR output", units="V", unitPrefix="m")
@@ -103,7 +118,9 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
         self._plotItem.setTitle("Reflectance")
 
         self._plotWidget.setXRange(
-            self._parent.WAVELENGTHS[0], self._parent.WAVELENGTHS[-1], padding=0.1
+            min(settings.HARDWARE.WAVELENGTHS),
+            max(settings.HARDWARE.WAVELENGTHS),
+            padding=0.1,
         )
 
     def _init_button_control(self):
@@ -150,7 +167,7 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
 
     @plotWidget.setter
     def plotWidget(self, value):
-        raise WriteCoordinateError("plotWidget is read-only")
+        raise WriteCoordinateError("plotWidget does not support item assignment")
 
     def clear(self):
         self._changing_plot = True
@@ -160,7 +177,7 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
         self.plot()
         self._changing_plot = False
 
-    def plot(self, data: Optional[List[float]] = None):
+    def plot(self, data: list[float] | None = None):
         self._changing_plot = True
         self._plotWidget.clear()
 
@@ -168,7 +185,7 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
         if self._parent.baseline is not None:
             normalized_baseline = [1] * len(self._parent.baseline)
             pc = self._plotWidget.plot(
-                self._parent.WAVELENGTHS, normalized_baseline, pen=(255, 0, 0)
+                settings.HARDWARE.WAVELENGTHS, normalized_baseline, pen=(255, 0, 0)
             )
             self._parent.twoDPlottedList.append(normalized_baseline)
 
@@ -177,7 +194,7 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
                 dat = normalize(dat, self._parent.baseline)
             self._parent.twoDPlottedList.append(dat)
             pc = self._plotWidget.plot(
-                self._parent.WAVELENGTHS,
+                settings.HARDWARE.WAVELENGTHS,
                 dat,
                 pen=(0, 100, 0),
                 symbolBrush=(0, 255, 0),
@@ -193,7 +210,7 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
         if data is not None:
             if self._parent.baseline is not None:
                 data = normalize(data, self._parent.baseline)
-            pc = self._plotWidget.plot(self._parent.WAVELENGTHS, data, pen=pen)
+            pc = self._plotWidget.plot(settings.HARDWARE.WAVELENGTHS, data, pen=pen)
             pc.setSymbol("o")
 
         self._changing_plot = False
@@ -203,6 +220,8 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
 
 
 class ScatterPlot3D(QVBoxLayout, PlotLayout):
+    """3d scatterplot layout, inherits plotlayout"""
+
     def __init__(self, parent: PsPlot):
         super().__init__()
         self._parent = parent
@@ -218,11 +237,11 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
 
     def _init_variables(self):
         self._axis_options_index_map = {
-            name: index for index, name in enumerate(self._parent.SCATTER3D_AXIS_OPTIONS)
+            name: index for index, name in enumerate(settings.SCATTER3D.AXIS_OPTIONS)
         }
-        self._axis_var_x = self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT
-        self._axis_var_z = self._parent.SCATTER3D_AXIS_VAR_Y_DEFAULT
-        self._axis_var_y = self._parent.SCATTER3D_AXIS_VAR_Z_DEFAULT
+        self._axis_var_x = settings.SCATTER3D.AXIS_VAR_X_DEFAULT
+        self._axis_var_z = settings.SCATTER3D.AXIS_VAR_Y_DEFAULT
+        self._axis_var_y = settings.SCATTER3D.AXIS_VAR_Z_DEFAULT
 
         # hierarchical datastructure that is used to speed up plotting
         # has 2 special keys that are not materials but represent groups
@@ -239,7 +258,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         #     }
         # }
         # TODO make this a dataclass or something smart
-        self.unique_series = {material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS}
+        self.unique_series = {material: {} for material in settings.SCATTER3D.ALLOWED_MATERIALS}
 
     def _init_plot_widget(self):
         self._graph = Q3DScatter()
@@ -250,19 +269,19 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         self._graph.setOrthoProjection(True)
         self._graph.scene().activeCamera().setCameraPreset(Q3DCamera.CameraPresetIsometricLeft)
 
-        self._graph.axisX().setTitle(self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT)
+        self._graph.axisX().setTitle(settings.SCATTER3D.AXIS_VAR_X_DEFAULT)
         self._graph.axisX().setTitleVisible(True)
         self._graph.axisX().setLabelAutoRotation(90)
         self._graph.axisX().setTitleFixed(False)
         self._graph.axisX().setLabelFormat("")
 
-        self._graph.axisY().setTitle(self._parent.SCATTER3D_AXIS_VAR_Y_DEFAULT)
+        self._graph.axisY().setTitle(settings.SCATTER3D.AXIS_VAR_Y_DEFAULT)
         self._graph.axisY().setTitleVisible(True)
         self._graph.axisY().setLabelAutoRotation(90)
         self._graph.axisY().setTitleFixed(False)
         self._graph.axisY().setLabelFormat("")
 
-        self._graph.axisZ().setTitle(self._parent.SCATTER3D_AXIS_VAR_Z_DEFAULT)
+        self._graph.axisZ().setTitle(settings.SCATTER3D.AXIS_VAR_Z_DEFAULT)
         self._graph.axisZ().setTitleVisible(True)
         self._graph.axisZ().setLabelAutoRotation(90)
         self._graph.axisZ().setTitleFixed(False)
@@ -293,7 +312,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         # legend
         self._legendLayout = QHBoxLayout()
         self._legend_buttons = {}
-        for name, color in self._parent.SCATTER3D_COLOR_MAP.items():
+        for name, color in settings.SCATTER3D.COLOR_MAP.items():
             label = QLabel()
             button = QPushButton(name)
             button.setCheckable(True)
@@ -332,16 +351,16 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
 
         # buttons
         self._axXSelection = QComboBox()
-        self._axXSelection.addItems(self._parent.SCATTER3D_AXIS_OPTIONS)
-        self._axXSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT)
+        self._axXSelection.addItems(settings.SCATTER3D.AXIS_OPTIONS)
+        self._axXSelection.setCurrentText(settings.SCATTER3D.AXIS_VAR_X_DEFAULT)
         self._axXSelection.currentTextChanged.connect(self._ax_x_changed)
         self._axYSelection = QComboBox()
-        self._axYSelection.addItems(self._parent.SCATTER3D_AXIS_OPTIONS)
-        self._axYSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_Y_DEFAULT)
+        self._axYSelection.addItems(settings.SCATTER3D.AXIS_OPTIONS)
+        self._axYSelection.setCurrentText(settings.SCATTER3D.AXIS_VAR_Y_DEFAULT)
         self._axYSelection.currentTextChanged.connect(self._ax_y_changed)
         self._axZSelection = QComboBox()
-        self._axZSelection.addItems(self._parent.SCATTER3D_AXIS_OPTIONS)
-        self._axZSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_Z_DEFAULT)
+        self._axZSelection.addItems(settings.SCATTER3D.AXIS_OPTIONS)
+        self._axZSelection.setCurrentText(settings.SCATTER3D.AXIS_VAR_Z_DEFAULT)
         self._axZSelection.currentTextChanged.connect(self._ax_z_changed)
 
         self._defaultAxesBtn = QPushButton("Default axes")
@@ -361,9 +380,9 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         self._controlLayout.setSpacing(0)
 
     def _default_axes(self):
-        self._axXSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_X_DEFAULT)
-        self._axYSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_Y_DEFAULT)
-        self._axZSelection.setCurrentText(self._parent.SCATTER3D_AXIS_VAR_Z_DEFAULT)
+        self._axXSelection.setCurrentText(settings.SCATTER3D.AXIS_VAR_X_DEFAULT)
+        self._axYSelection.setCurrentText(settings.SCATTER3D.AXIS_VAR_Y_DEFAULT)
+        self._axZSelection.setCurrentText(settings.SCATTER3D.AXIS_VAR_Z_DEFAULT)
 
     def _ax_x_changed(self, name):
         self._axis_var_x = name
@@ -383,7 +402,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
                 series = self.unique_series[material][id]["series"]
                 self._graph.removeSeries(series)
 
-        self.unique_series = {material: {} for material in self._parent.SCATTER3D_ALLOWED_MATERIALS}
+        self.unique_series = {material: {} for material in settings.SCATTER3D.ALLOWED_MATERIALS}
 
     def plot(self, axis_changed: bool = False):
         """axis_changed: true if the variable of
@@ -393,7 +412,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         index_y = self._axis_options_index_map[self._axis_var_y]
         index_z = self._axis_options_index_map[self._axis_var_z]
         for material in self.unique_series:
-            if material not in self._parent.SCATTER3D_ALLOWED_MATERIALS:
+            if material not in settings.SCATTER3D.ALLOWED_MATERIALS:
                 if material == "":
                     material_name = "unknown"
                 else:
@@ -401,7 +420,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
             else:
                 material_name = material
 
-            color = self._parent.SCATTER3D_COLOR_MAP[material_name]
+            color = settings.SCATTER3D.COLOR_MAP[material_name]
             for id in self.unique_series[material]:
                 if "proxy" not in self.unique_series[material][id]:
                     proxy = QScatterDataProxy()
@@ -478,6 +497,8 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
 
 
 class Histogram(QVBoxLayout, PlotLayout):
+    """QLayout for histogram plot, inherits plotlayout"""
+
     def __init__(self, parent: PsPlot):
         super().__init__()
         self._parent = parent

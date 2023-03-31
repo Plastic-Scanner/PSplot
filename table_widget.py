@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from types import NoneType
+from __future__ import annotations
 from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
 from PyQt5.QtGui import (
     QColor,
@@ -10,6 +10,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
+    # QCompeleter,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -23,57 +24,48 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from datetime import datetime
-from typing import List
-from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
-from helper_functions import normalize, SNV_transform, list_to_string
-import joblib
-import os
-import pandas as pd
-
-# pyqtgraph should always be imported after importing pyqt
-import pyqtgraph as pg
-import random
-import serial
-import serial.tools.list_ports
-import time
+from helper_functions import list_to_string
+import settings
 
 
 class Table(QTableWidget):
     """
     this class extends QTableWidget
-    * supports copying multiple cell's text onto the clipboard
-    * formatted specifically to work with multiple-cell paste into programs
+    - supports copying multiple cell's text onto the clipboard
+    - formatted specifically to work with multiple-cell paste into programs
       like google sheets, excel, or numbers
+    - autocomplete functionality for certain columns
     Taken and modified from https://stackoverflow.com/a/68598423/5539470
     """
 
     def __init__(
         self,
-        TABLE_HEADER: List[str],
-        TABLE_DATAFRAME_SUBSET_HEADERS: List[str],
     ) -> None:
         super().__init__()
 
-        self.setColumnCount(len(TABLE_HEADER))
-        self.setHorizontalHeaderLabels(TABLE_HEADER)
+        self.setColumnCount(len(settings.TABLE.HEADERS))
+        self.setHorizontalHeaderLabels(settings.TABLE.HEADERS)
         self.itemChanged.connect(self.tableChanged)
         # make the first 2 columns extra wide
         self.setColumnWidth(0, 200)
         self.setColumnWidth(1, 200)
 
-        self.row_labels = []
-        self.calibration_counter
+        self._row_labels = []
+        self._calibration_counter = 0
 
     def append(
         self,
-        data: List[float],
+        data: list[float],
         name: str = "",
         material: str = "unknown",
         color: str = "",
         calibrated_measurement: bool = False,
     ) -> None:
-        ...
+        """Add a new row to the table.
+        A row can take on one of two types: calibrated, or not calibrated.
+        A calibrated row is highlighted with a different background color
+        and given a different index in the left column.
+        """
         n_rows = self.rowCount()
         # add a row
         self.setRowCount(n_rows + 1)
@@ -86,13 +78,13 @@ class Table(QTableWidget):
         self.setItem(n_rows, 2, QTableWidgetItem(color))
 
         if calibrated_measurement:
-            self.calibration_counter += 1
-            self.row_labels.append(f"c {self.calibration_counter}")
+            self._calibration_counter += 1
+            self._row_labels.append(f"c {self._calibration_counter}")
             self.setItem(n_rows, 1, QTableWidgetItem("spectralon"))
         else:
-            self.row_labels.append(str(n_rows + 1 - self.calibration_counter))
+            self._row_labels.append(str(n_rows + 1 - self._calibration_counter))
 
-        self.setVerticalHeaderLabels(self.row_labels)
+        self.setVerticalHeaderLabels(self._row_labels)
 
         # add value for every column of new row
         dataStr = list_to_string(data)
@@ -115,7 +107,7 @@ class Table(QTableWidget):
         """clears the contents of the table"""
         self.clearContents()
         self.setRowCount(0)
-        self.row_labels = []
+        self._row_labels = []
 
     # TODO this should become an emitted signal
     def itemChanged(self, item) -> None:
@@ -143,6 +135,7 @@ class Table(QTableWidget):
             self.df.loc[item.row(), self.DF_HEADER[column]] = item.text()
 
     def keyPressEvent(self, event) -> None:
+        """enables copying from the table using CTRL-C"""
         super().keyPressEvent(event)
 
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -159,3 +152,6 @@ class Table(QTableWidget):
                         copy_text += "\t"
 
                 QApplication.clipboard().setText(copy_text)
+
+    def built_from_dataframe(self) -> None:
+        NotImplemented

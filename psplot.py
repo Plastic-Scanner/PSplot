@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 
-from types import NoneType
+from __future__ import annotations
 from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
 from PyQt5.QtGui import (
-    QColor,
     QIcon,
     QKeyEvent,
 )
 from PyQt5.QtWidgets import (
-    QApplication,
     QComboBox,
     QFileDialog,
     QGroupBox,
@@ -18,16 +16,14 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 from datetime import datetime
-from typing import List
 from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
 from table_widget import Table
-from helper_functions import normalize, SNV_transform
+from helper_functions import normalize, snv_transform
+import settings
 import joblib
 import os
 import pandas as pd
@@ -51,124 +47,20 @@ class ComboBox(QComboBox):
 class PsPlot(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowIcon(QIcon("./resources/ps_logo.png"))
-
-        # HARDCODED SETTINGS
-        self.WAVELENGTHS = [
-            940,
-            1050,
-            1200,
-            1300,
-            1450,
-            1550,
-            1650,
-            1720,
-        ]  # in nanometers
-        self.BAUDRATE = 9600
-        self.DATASET_URL = "https://raw.githubusercontent.com/Plastic-Scanner/data/main/data/20230117_DB2.1_second_dataset/measurement.csv"
+        self.setWindowIcon(QIcon(settings.GUI.WINDOW_LOGO))
 
         self.serial = None
 
-        # the names of the columns of the table
-        self.TABLE_HEADER = ["name", "material", "color"] + [str(x) for x in self.WAVELENGTHS]
-        # the columns of the dataframe that are represented in the table
-        self.TABLE_DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in self.WAVELENGTHS]
-
-        # the headers for the dataframe:
-        # |  Reading                |   the how many'th measurement                   |
-        # |  Name                   |   name or id of the piece                       |
-        # |  PlasticType            |   type of the plastic                           |
-        # |  Color                  |   physical color of the piece of plastic        |
-        # |  MeasurementType        |   if the measurement was a calibration or not   | options: regular, calibration
-        # |  nm<wavelengths>        |   measured signal per wavelength                |
-        # |  nm<wavelengths>_norm   |   signal per wavelength after normalization     |
-        self.DF_HEADER = (
-            [
-                "Name",
-                "PlasticType",
-                "Color",
-                "MeasurementType",
-                "DateTime",
-            ]
-            + [f"nm{x}" for x in self.WAVELENGTHS]
-            + [f"nm{x}_snv" for x in self.WAVELENGTHS]
-            + [f"nm{x}_norm" for x in self.WAVELENGTHS]
-        )
-        self.DF_HEADER_DTYPES = (
-            {
-                "Name": str,
-                "PlasticType": str,
-                "Color": str,
-                "MeasurementType": str,
-                "DateTime": str,
-            }
-            | {f"nm{x}": float for x in self.WAVELENGTHS}
-            | {f"nm{x}_snv": float for x in self.WAVELENGTHS}
-            | {f"nm{x}_norm": float for x in self.WAVELENGTHS}
-        )
-        # the columns of the dataframe that are used for the classifier model
-        self.PREDICTION_HEADERS = [f"nm{x}" for x in self.WAVELENGTHS]
-
-        self.SCATTER3D_AXIS_OPTIONS = (
-            [f"nm{x}" for x in self.WAVELENGTHS]
-            + [f"nm{x}_snv" for x in self.WAVELENGTHS]
-            + [f"nm{x}_norm" for x in self.WAVELENGTHS]
-        )
-
-        self.SCATTER3D_AXIS_VAR_X_DEFAULT = "nm1050_norm"
-        self.SCATTER3D_AXIS_VAR_Y_DEFAULT = "nm1450_norm"
-        self.SCATTER3D_AXIS_VAR_Z_DEFAULT = "nm1650_norm"
-
-        # colorblind friendly colors taken and adjusted from https://projects.susielu.com/viz-palette
-        # ["#ffd700", "#ffb14e", "#fa8775", "#ea5f94",
-        #  "#cd34b5", "#9d02d7", "#0000ff", "#2194F9"]
-        self.COLOR_TABLEAU = (
-            QColor(255, 215, 0),
-            QColor(255, 177, 78),
-            QColor(250, 135, 117),
-            QColor(234, 95, 148),
-            QColor(205, 52, 181),
-            QColor(157, 2, 215),
-            QColor(33, 148, 249),
-            QColor(0, 0, 255),
-        )
-        self.SCATTER3D_ALLOWED_MATERIALS = [
-            "PP",
-            "PET",
-            "PS",
-            "HDPE",
-            "LDPE",
-            "PVC",
-            "other",
-            "unknown",
-        ]
-        self.SCATTER3D_COLOR_MAP = dict(
-            zip(
-                self.SCATTER3D_ALLOWED_MATERIALS,
-                self.COLOR_TABLEAU,
-            )
-        )
-
-        self.df = pd.DataFrame(columns=self.DF_HEADER)
+        self.df = pd.DataFrame(columns=settings.DATAFRAME.HEADER)
 
         # classifier model used to predict type of plastic
         self.clf = joblib.load("./resources/model.joblib")
 
         # keeps track of all of the samples that have been measured
-        self.DEFAULT_SAMPLE_MATERIALS = [
-            "PP",
-            "PET",
-            "PS",
-            "HDPE",
-            "LDPE",
-            "PVC",
-            "spectralon",
-            "unknown",
-        ]
-        self.sample_materials = self.DEFAULT_SAMPLE_MATERIALS.copy()
+        self.sample_materials = settings.USER_INPUT.DEFAULT_SAMPLE_MATERIALS.copy()
 
         # holds the calibration measurement
-        self.baseline: NoneType | List[float] = None
+        self.baseline: list[float] | None = None
 
         self.sample_colors = {""}
         self.sample_names = {""}
@@ -233,7 +125,7 @@ class PsPlot(QMainWindow):
         self.scatter2d._plotWidget.setFocus()
         self.widget.setTabOrder(self.scatter2d.plotWidget, self.serialComboBox)
 
-    def _setupInOutUI(self):
+    def _setupInOutUI(self) -> None:
         # selecting serial
         self.serialComboBox = ComboBox()
         self.serialComboBox.onPopup.connect(self.serial_scan)
@@ -274,7 +166,7 @@ class PsPlot(QMainWindow):
         self.inoutBox = QGroupBox("data in/out")
         self.inoutBox.setLayout(self.inoutBoxLayout)
 
-    def _setupMeasureUI(self):
+    def _setupMeasureUI(self) -> None:
         # calibration
         self.calibrateBtn = QPushButton("Calibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
@@ -347,7 +239,7 @@ class PsPlot(QMainWindow):
         self.measureBox = QGroupBox("measuring")
         self.measureBox.setLayout(self.measureBoxLayout)
 
-    def keyPressEvent(self, e: QKeyEvent):
+    def keyPressEvent(self, e: QKeyEvent) -> None:
         # if e.key() == Qt.Key.Key_Escape or e.key() == Qt.Key.Key_Q:
         if e.key() == Qt.Key.Key_Q:
             self.close()
@@ -359,13 +251,17 @@ class PsPlot(QMainWindow):
             self.scatter2d._viewBox.scaleBy((1, 1.1))
 
         elif e.key() == Qt.Key.Key_Home:
+            # TODO fix this
             self.scatter2d._plotWidget.setXRange(
-                self.WAVELENGTHS[0], self.WAVELENGTHS[-1], padding=0.1
+                settings.HARDWARE.WAVELENGTHS[0],
+                settings.HARDWARE.WAVELENGTHS[-1],
+                padding=0.1,
             )
             self.scatter2d._plotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         elif e.key() == Qt.Key.Key_Space:
             self.takeRegularMeasurement()
+
         elif e.key() == Qt.Key.Key_F11:
             if not self.fullscreen:
                 self.windowHandle().showFullScreen()
@@ -374,7 +270,7 @@ class PsPlot(QMainWindow):
                 self.windowHandle().showNormal()
                 self.fullscreen = False
 
-    def center(self):
+    def center(self) -> None:
         """centers the window to the center of the screen"""
         qr = self.frameGeometry()
         cp = self.screen().availableGeometry().center()
@@ -398,7 +294,7 @@ class PsPlot(QMainWindow):
         port = self.serialComboBox.currentText()
 
         try:
-            self.serial = serial.Serial(port, baudrate=self.BAUDRATE, timeout=1)
+            self.serial = serial.Serial(port, baudrate=settings.HARDWARE.BAUDRATE, timeout=1)
             print(f"Opened serial port {self.serial.portstr}")
             self.serialNotifLbl.setText("Using real data")
             time.sleep(1)
@@ -412,7 +308,7 @@ class PsPlot(QMainWindow):
             self.serial = None
             self.serialNotifLbl.setText("Using dummy data")
 
-    def takeRegularMeasurement(self):
+    def takeRegularMeasurement(self) -> None:
         if (
             self.current_calibration_counter == 0
             and self.overwrite_no_callibration_warning is False
@@ -430,13 +326,13 @@ class PsPlot(QMainWindow):
                 self.overwrite_no_callibration_warning = True
 
         data = self.getMeasurement()
-        self.addMeasurement(data)
-        self.scatter2d.plot(SNV_transform(data))
+        self.add_measurement(data)
+        self.scatter2d.plot(snv_transform(data))
         self.scatter3d.plot()
         self.histogram.plot()
         # self.plotThreeD([data[1], data[4], data[6]])
 
-    def getMeasurement(self) -> List[float]:
+    def getMeasurement(self) -> list[float]:
         if self.serial is not None:
             # send serial command
             self.serial.write(b"scan\n")
@@ -464,35 +360,38 @@ class PsPlot(QMainWindow):
 
         return data
 
-    def addMeasurement(self, data: List[float]) -> None:
+    def add_measurement(self, data: list[float]) -> None:
+        # get the material from the ComboBox
         material = self.sampleMaterialSelection.currentText().rstrip()
         if material not in self.sample_materials:
             self.sample_materials.append(material)
             self.sampleMaterialSelection.addItem(material)
 
+        # get the name from the ComboBox
         name = self.sampleNameSelection.currentText().rstrip()
         if name not in self.sample_names:
             self.sample_names.add(name)
             self.sampleNameSelection.addItem(name)
 
+        # get the color from the ComboBox
         color = self.sampleColorSelection.currentText().rstrip()
         if color not in self.sample_colors:
             self.sample_colors.add(color)
             self.sampleColorSelection.addItem(color)
 
-        self.storeMeasurement(data, name=name, material=material, color=color)
+        self.store_measurement(data, name=name, material=material, color=color)
 
-    def storeMeasurement(
+    def store_measurement(
         self,
-        data: List[float],
+        data: list[float],
         name: str = "",
         material: str = "unknown",
         color: str = "",
         calibrated_measurement: bool = False,
-    ):
+    ) -> None:
         """adds newest measurement to table and dataframe"""
 
-        data_snv = SNV_transform(data)
+        data_snv = snv_transform(data)
 
         if calibrated_measurement:
             data_normalized = [1] * len(data)
@@ -534,14 +433,14 @@ class PsPlot(QMainWindow):
 
     def addToDataframe(
         self,
-        data: List[float],
-        data_snv: List[float],
-        data_normalized: List[float | None],
+        data: list[float],
+        data_snv: list[float],
+        data_normalized: list[float | None],
         name: str = "",
         material: str = "unknown",
         color: str = "",
         calibrated_measurement: bool = False,
-    ):
+    ) -> None:
         if calibrated_measurement:
             measurement_type = "calibration"
         else:
@@ -573,7 +472,7 @@ class PsPlot(QMainWindow):
             self.baseline = self.getMeasurement()
             self.current_calibration_counter += 1
             self.total_calibration_counter += 1
-            self.storeMeasurement(self.baseline, calibrated_measurement=True)
+            self.store_measurement(self.baseline, calibrated_measurement=True)
 
             # after a calibration calibration the plot is cleared
             self.scatter2d.plot()
@@ -584,13 +483,15 @@ class PsPlot(QMainWindow):
         self.twoDPlottedList.clear()
         self.scatter2d.clear()
 
-    def load_dataset_online(self):
+    def load_dataset_online(self) -> None:
         QMessageBox.information(
-            self, "loading dataset", f"Dataset is loaded from url:\n{self.DATASET_URL}"
+            self,
+            "loading dataset",
+            f"Dataset is loaded from url:\n{settings.DATAFRAME.DATASET_URL}",
         )
-        self.loadDataset(self.DATASET_URL)
+        self.loadDataset(settings.DATAFRAME.DATASET_URL)
 
-    def load_dataset_local(self):
+    def load_dataset_local(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
             self,
             "Load dataset",
@@ -624,21 +525,21 @@ class PsPlot(QMainWindow):
         )
         return button == QMessageBox.Yes
 
-    def loadDataset(self, dataset_path: str):
+    def loadDataset(self, dataset_path: str) -> None:
         """load a dataset to continue where that dataset last left off"""
         # give warnings that there is data and it will get overwritten
         if len(self.df) > 0:
             if not (self._load_dataset_warning() and self._load_dataset_warning_really()):
                 return
 
-        new_df = pd.read_csv(dataset_path, index_col="Reading", dtype=self.DF_HEADER_DTYPES)
-        if list(new_df.columns) != self.DF_HEADER:
+        new_df = pd.read_csv(dataset_path, index_col="Reading", dtype=settings.DATAFRAME.HEADER)
+        if list(new_df.columns) != settings.DATAFRAME.HEADER:
             QMessageBox.critical(
                 self,
                 "Load dataset",
                 "Dataset could not be loaded because of unexpected columns\n\n"
                 + f"columns of new dataset:\n {new_df.columns}\n\n"
-                + f"expected columns for a dataset:\n {self.DF_HEADER}\n\n"
+                + f"expected columns for a dataset:\n {settings.DATAFRAME.HEADER}\n\n"
                 + "COULD NOT LOAD NEW DATASET!\n\n"
                 + "For help, please contact the PlasticScanner Team",
             )
@@ -660,7 +561,7 @@ class PsPlot(QMainWindow):
                 self.scatter3d.unique_series[material][name] = {"data": []}
 
             self.scatter3d.unique_series[material][name]["data"].append(
-                row[self.SCATTER3D_AXIS_OPTIONS]
+                row[settings.SCATTER3D.AXIS_OPTIONS]
             )
 
         # clear 2d plot and histogram
@@ -677,7 +578,7 @@ class PsPlot(QMainWindow):
         self.total_calibration_counter = 0
         self.clear_calibration()
 
-        # clear table an variable
+        # clear table
         self.table.clear()
         # build table
         for _idx, row in self.df.iterrows():
@@ -687,7 +588,7 @@ class PsPlot(QMainWindow):
             if row["MeasurementType"] == "calibration":
                 self.total_calibration_counter += 1
                 self.table.append(
-                    row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
+                    row[settings.TABLE.DATAFRAME_SUBSET_HEADERS],
                     name=name,
                     material=plasticType,
                     color=color,
@@ -695,7 +596,7 @@ class PsPlot(QMainWindow):
                 )
             else:
                 self.table.append(
-                    row[self.TABLE_DATAFRAME_SUBSET_HEADERS],
+                    row[settings.TABLE.DATAFRAME_SUBSET_HEADERS],
                     name=name,
                     material=plasticType,
                     color=color,
