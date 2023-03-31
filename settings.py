@@ -70,7 +70,7 @@ class DATAFRAME:
 class TABLE:
     """The table widget takes data from a pandas dataframe
     It takes the data from the columns in  DATAFRAME_SUBSET_HEADERS.
-    The columns of the table are also labled, for this TABLE_HEADER is used.
+    The columns of the table are also labelled, for this TABLE_HEADER is used.
     """
 
     # the names of the columns of the table

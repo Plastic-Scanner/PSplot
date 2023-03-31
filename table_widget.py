@@ -100,7 +100,7 @@ class Table(QTableWidget):
         self._row_labels = []
 
     # TODO this should become an emitted signal so that the comboboxes can also be updated
-    # the commented part originates from the previouse implementation and should still be translated
+    # the commented part originates from the previous implementation and should still be translated
     def itemChanged(self, item) -> None:
         super().itemChanged(item)
 
