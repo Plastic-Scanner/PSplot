@@ -45,7 +45,6 @@ class Table(QTableWidget):
 
         self.setColumnCount(len(settings.TABLE.HEADERS))
         self.setHorizontalHeaderLabels(settings.TABLE.HEADERS)
-        self.itemChanged.connect(self.tableChanged)
         # make the first 2 columns extra wide
         self.setColumnWidth(0, 200)
         self.setColumnWidth(1, 200)
@@ -111,6 +110,7 @@ class Table(QTableWidget):
 
     # TODO this should become an emitted signal
     def itemChanged(self, item) -> None:
+        super().itemChanged(item)
         # if it was a label that changed, add it to the list of labels
         if item.column() == 0:
             name = item.text()

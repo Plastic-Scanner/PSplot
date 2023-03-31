@@ -411,7 +411,7 @@ class PsPlot(QMainWindow):
             color,
             calibrated_measurement,
         )
-        self.add_to_table(
+        self.table.append(
             data,
             name,
             material,

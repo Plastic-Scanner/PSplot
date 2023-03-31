@@ -76,6 +76,11 @@ class TABLE:
     HEADERS = ["name", "material", "color"] + [str(x) for x in HARDWARE.WAVELENGTHS]
     # the columns of the dataframe that are represented in the table
     DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in HARDWARE.WAVELENGTHS]
+
+
+class CLASSIFIER:
+    """Settings for the classifier model"""
+
     # the columns of the dataframe that are used for the classifier model
     PREDICTION_HEADERS = [f"nm{x}" for x in HARDWARE.WAVELENGTHS]
 
