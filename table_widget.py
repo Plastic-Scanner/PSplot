@@ -147,4 +147,4 @@ class Table(QTableWidget):
                 QApplication.clipboard().setText(copy_text)
 
     def built_from_dataframe(self) -> None:
-        NotImplemented
+        return NotImplemented
