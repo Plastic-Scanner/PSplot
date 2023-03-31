@@ -40,7 +40,10 @@ from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
 from table_widget import Table
 
 
+# TODO can we replace this with QComboBox.currentIndexChanged?
 class ComboBox(QComboBox):
+    """modified version of QCombobox, emits a signal when user clicks on the ComboBox."""
+
     onPopup = pyqtSignal()
 
     def showPopup(self) -> None:

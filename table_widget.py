@@ -100,31 +100,32 @@ class Table(QTableWidget):
         self._row_labels = []
 
     # TODO this should become an emitted signal so that the comboboxes can also be updated
+    # the commented part originates from the previouse implementation and should still be translated
     def itemChanged(self, item) -> None:
         super().itemChanged(item)
 
-        # if it was a label that changed, add it to the list of labels
-        if item.column() == 0:
-            name = item.text()
-            if name not in self.sample_names:
-                self.sample_names.add(name)
-                self.sampleNameSelection.addItem(name)
-
-        # if it was a material that changed, add it to the list of materials
-        elif item.column() == 1:
-            name = item.text()
-            if name not in self.sample_materials:
-                self.sample_materials.append(name)
-                self.sampleMaterialSelection.addItem(name)
-
-        # also update the change in the dataframe
-        if not self.currently_storing:
-            column = item.column()
-            # the header of the dataframe contains the `DateTime` header which is not
-            # present in the table, and has to be compensated for
-            if column >= 4:
-                column -= 1
-            self.df.loc[item.row(), self.DF_HEADER[column]] = item.text()
+        # # if it was a label that changed, add it to the list of labels
+        # if item.column() == 0:
+        #     name = item.text()
+        #     if name not in self.sample_names:
+        #         self.sample_names.add(name)
+        #         self.sampleNameSelection.addItem(name)
+        #
+        # # if it was a material that changed, add it to the list of materials
+        # elif item.column() == 1:
+        #     name = item.text()
+        #     if name not in self.sample_materials:
+        #         self.sample_materials.append(name)
+        #         self.sampleMaterialSelection.addItem(name)
+        #
+        # # also update the change in the dataframe
+        # if not self.currently_storing:
+        #     column = item.column()
+        #     # the header of the dataframe contains the `DateTime` header which is not
+        #     # present in the table, and has to be compensated for
+        #     if column >= 4:
+        #         column -= 1
+        #     self.df.loc[item.row(), self.DF_HEADER[column]] = item.text()
 
     def keyPressEvent(self, event) -> None:
         """enables copying from the table using CTRL-C"""
