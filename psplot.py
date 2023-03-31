@@ -1,7 +1,18 @@
 #!/usr/bin/env python
 
 from __future__ import annotations
-from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
+
+import os
+import random
+import time
+from datetime import datetime
+
+import joblib
+import pandas as pd
+
+import serial
+import serial.tools.list_ports
+from PyQt5.QtCore import QT_VERSION_STR, Qt, pyqtSignal
 from PyQt5.QtGui import (
     QIcon,
     QKeyEvent,
@@ -19,21 +30,14 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from datetime import datetime
-from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
-from table_widget import Table
-from helper_functions import normalize, snv_transform
-import settings
-import joblib
-import os
-import pandas as pd
 
 # pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
-import random
-import serial
-import serial.tools.list_ports
-import time
+
+import settings
+from helper_functions import normalize, snv_transform
+from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
+from table_widget import Table
 
 
 class ComboBox(QComboBox):

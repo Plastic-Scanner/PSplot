@@ -2,6 +2,7 @@
 """settings, constants and computed constants that all other modules use"""
 
 from __future__ import annotations
+
 from PyQt5.QtGui import QColor
 
 

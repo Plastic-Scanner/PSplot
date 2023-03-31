@@ -1,6 +1,22 @@
 #!/usr/bin/env python
 
 from __future__ import annotations
+
+from abc import ABC, ABCMeta, abstractmethod
+from collections import deque
+from typing import TYPE_CHECKING
+
+import pandas as pd
+
+from PyQt5.QtDataVisualization import (
+    Q3DCamera,
+    Q3DScatter,
+    Q3DTheme,
+    QAbstract3DGraph,
+    QScatter3DSeries,
+    QScatterDataItem,
+    QScatterDataProxy,
+)
 from PyQt5.QtGui import (
     QColor,
     QVector3D,
@@ -18,26 +34,12 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt5.QtDataVisualization import (
-    Q3DCamera,
-    Q3DScatter,
-    Q3DTheme,
-    QAbstract3DGraph,
-    QScatter3DSeries,
-    QScatterDataItem,
-    QScatterDataProxy,
-)
-from collections import deque
-from helper_functions import normalize
-import settings
-import pandas as pd
 
 # pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
-from abc import ABC, ABCMeta, abstractmethod
 
-
-from typing import TYPE_CHECKING
+import settings
+from helper_functions import normalize
 
 if TYPE_CHECKING:
     from psplot import PsPlot
@@ -49,14 +51,17 @@ class WriteCoordinateError(Exception):
     pass
 
 
-class PlotLayoutMeta(ABCMeta, type(QBoxLayout)):
-    """metaclass for abstract base class for plot layouts"""
+class PSplotVisual(ABCMeta, type(QBoxLayout)):
+    """
+    Metaclass for base class for visualisation implementations.
+    """
 
     pass
 
 
-class PlotLayout(ABC, metaclass=PlotLayoutMeta):
-    """abstract base class for all plot layouts
+class PlotLayout(ABC, metaclass=PSplotVisual):
+    """
+    Base class for all visualisation layouts.
     implements:
         plot
         clear

@@ -1,31 +1,16 @@
 #!/usr/bin/env python
 
 from __future__ import annotations
-from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
-from PyQt5.QtGui import (
-    QColor,
-    QIcon,
-    QKeyEvent,
-)
+
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
-    QComboBox,
-    # QCompeleter,
-    QFileDialog,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QMessageBox,
-    QPushButton,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
 )
-from helper_functions import list_to_string
+
 import settings
+from helper_functions import list_to_string
 
 
 class Table(QTableWidget):
@@ -45,11 +30,14 @@ class Table(QTableWidget):
 
         self.setColumnCount(len(settings.TABLE.HEADERS))
         self.setHorizontalHeaderLabels(settings.TABLE.HEADERS)
+
         # make the first 2 columns extra wide
         self.setColumnWidth(0, 200)
         self.setColumnWidth(1, 200)
 
+        # the labels for the most left column
         self._row_labels = []
+        # how many times a calibrated measurement has been appended
         self._calibration_counter = 0
 
     def append(
@@ -70,9 +58,12 @@ class Table(QTableWidget):
         self.setRowCount(n_rows + 1)
 
         # add sample name as column 0
+        # self.setItem(n_rows, 0, QTableWidgetItem(name))
         self.setItem(n_rows, 0, QTableWidgetItem(name))
+
         # add sample material as column 1
         self.setItem(n_rows, 1, QTableWidgetItem(material))
+
         # add sample color as column 2
         self.setItem(n_rows, 2, QTableWidgetItem(color))
 
@@ -108,9 +99,10 @@ class Table(QTableWidget):
         self.setRowCount(0)
         self._row_labels = []
 
-    # TODO this should become an emitted signal
+    # TODO this should become an emitted signal so that the comboboxes can also be updated
     def itemChanged(self, item) -> None:
         super().itemChanged(item)
+
         # if it was a label that changed, add it to the list of labels
         if item.column() == 0:
             name = item.text()
