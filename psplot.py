@@ -102,7 +102,7 @@ class PsPlot(QMainWindow):
         # input output (selecting serial and saving)
         self._setup_in_out_ui()
         # taking a measurement
-        self._setupMeasureUI()
+        self._setup_measure_ui()
         # 2d Plot
         self.scatter2d = ScatterPlot2D(self)
         # 3d plot
@@ -180,7 +180,7 @@ class PsPlot(QMainWindow):
         self.inoutBox = QGroupBox("data in/out")
         self.inoutBox.setLayout(self.inoutBoxLayout)
 
-    def _setupMeasureUI(self) -> None:
+    def _setup_measure_ui(self) -> None:
         # calibration
         self.calibrateBtn = QPushButton("Calibrate with spectralon")
         self.calibrateBtn.clicked.connect(self.calibrate)
