@@ -23,10 +23,11 @@ def normalize(
 
 
 def snv_transform(data: ArrayLike | list[float]) -> list[float]:
-    # the following is an SNV transform
-    # Subtract the mean and divide by the standarddiviation
+    """SNV transform
+    Subtract the mean and divide by the standarddiviation
+    """
     return list((np.asarray(data) - np.mean(data)) / np.std(data))
 
 
-def list_to_string(data: list[float]) -> str:
-    return " ".join([f"{i:.7f}" for i in data])
+def list_to_string(data: list[float]) -> list[str]:
+    return [f"{i:.7f}" for i in data]

@@ -12,7 +12,7 @@ import pandas as pd
 
 import serial
 import serial.tools.list_ports
-from PyQt5.QtCore import QT_VERSION_STR, Qt, pyqtSignal
+from PyQt5.QtCore import QT_VERSION_STR, Qt
 from PyQt5.QtGui import (
     QIcon,
     QKeyEvent,
@@ -36,26 +36,40 @@ import pyqtgraph as pg
 
 import settings
 from helper_functions import normalize, snv_transform
-from plot_layouts import Histogram, ScatterPlot2D, ScatterPlot3D
-from table_widget import Table
-
-
-# TODO can we replace this with QComboBox.currentIndexChanged?
-class ComboBox(QComboBox):
-    """modified version of QCombobox, emits a signal when user clicks on the ComboBox."""
-
-    onPopup = pyqtSignal()
-
-    def showPopup(self) -> None:
-        self.onPopup.emit()
-        super(ComboBox, self).showPopup()
+from visualisation_components import Histogram, ScatterPlot2D, ScatterPlot3D, Table
 
 
 class PsPlot(QMainWindow):
+    """main class and main window of the PSPlot program:
+    manages multiple things:
+        - serial communication with measurement device
+        - generating dummy data when real measurement device is not picked up
+        - adding measurements to dataframe
+        - loading dataframe from (online and offline sources)
+        - exporting dataframe
+
+    NOTE: I am aware that managing multiple things is bad cohesion.
+    But it makes it easier to manage for now.
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowIcon(QIcon(settings.GUI.WINDOW_LOGO))
 
+        self._setup_variables()
+        self._setup_ui()
+
+        # Connect to the serial device (first, newest detected)
+        self.serial_scan()
+        self.serialComboBox.setCurrentIndex(0)
+        self.serial_connect()
+
+        # set focus to the 2d scatter plot
+        # NOTE update this to include all new widgets
+        self.scatter2d._plotWidget.setFocus()
+        self.widget.setTabOrder(self.scatter2d.plotWidget, self.serialComboBox)
+
+    def _setup_variables(self) -> None:
         self.serial = None
 
         self.df = pd.DataFrame(columns=settings.DATAFRAME.HEADER)
@@ -84,9 +98,9 @@ class PsPlot(QMainWindow):
         # the amount of calibrations done in the current session + the previous sessions
         self.total_calibration_counter = 0
 
-        # setting up the UI elements
+    def _setup_ui(self) -> None:
         # input output (selecting serial and saving)
-        self._setupInOutUI()
+        self._setup_in_out_ui()
         # taking a measurement
         self._setupMeasureUI()
         # 2d Plot
@@ -105,6 +119,8 @@ class PsPlot(QMainWindow):
 
         # Table to display output
         self.table = Table()
+        # self.table.itemChanged.connect(lambda _: print("iets"))
+        self.table.user_change.connect(self._update_df_after_table_change)
 
         # add all layouts to mainLayout
         # Container widget
@@ -123,20 +139,11 @@ class PsPlot(QMainWindow):
         self.setMinimumSize(600, 350)
         self.center()
 
-        # Connect to the serial device (first, newest detected)
-        self.serial_scan()
-        self.serialComboBox.setCurrentIndex(0)
-        self.serial_connect()
-
-        # TODO update this to include all new widgets
-        self.scatter2d._plotWidget.setFocus()
-        self.widget.setTabOrder(self.scatter2d.plotWidget, self.serialComboBox)
-
-    def _setupInOutUI(self) -> None:
+    def _setup_in_out_ui(self) -> None:
         # selecting serial
-        self.serialComboBox = ComboBox()
-        self.serialComboBox.onPopup.connect(self.serial_scan)
-        self.serialComboBox.activated.connect(self.serial_connect)
+        self.serialComboBox = QComboBox()
+        self.serialComboBox.activated.connect(self.serial_scan)
+        self.serialComboBox.currentTextChanged.connect(self.serial_connect)
         # make it take up the maximum possible space
         self.serialComboBox.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -154,7 +161,7 @@ class PsPlot(QMainWindow):
 
         # export and calibrate
         self.exportDataBtn = QPushButton("Export dataset to file")
-        self.exportDataBtn.clicked.connect(self.exportCsv)
+        self.exportDataBtn.clicked.connect(self.export_to_csv)
 
         # serial horizontal layout
         self.horizontalSerialLayout = QHBoxLayout()
@@ -185,7 +192,7 @@ class PsPlot(QMainWindow):
         # the next two buttons will be enabled after a calibration has been performed
         self.regularMeasurementBtn = QPushButton("Take measurement\n(shortcut: spacebar)")
         self.regularMeasurementBtn.setToolTip("a calibration measurement needs to be taken first")
-        self.regularMeasurementBtn.clicked.connect(self.takeRegularMeasurement)
+        self.regularMeasurementBtn.clicked.connect(self.regular_measurement)
         # enable the next line in case you only want to allow measurements after a calibration
         # self.regularMeasurementBtn.setDisabled(True)
 
@@ -267,7 +274,7 @@ class PsPlot(QMainWindow):
             self.scatter2d._plotWidget.setYRange(self.yMin, self.yMax, padding=self.yPadding)
 
         elif e.key() == Qt.Key.Key_Space:
-            self.takeRegularMeasurement()
+            self.regular_measurement()
 
         elif e.key() == Qt.Key.Key_F11:
             if not self.fullscreen:
@@ -315,7 +322,7 @@ class PsPlot(QMainWindow):
             self.serial = None
             self.serialNotifLbl.setText("Using dummy data")
 
-    def takeRegularMeasurement(self) -> None:
+    def regular_measurement(self) -> None:
         if (
             self.current_calibration_counter == 0
             and self.overwrite_no_callibration_warning is False
@@ -332,14 +339,13 @@ class PsPlot(QMainWindow):
             else:
                 self.overwrite_no_callibration_warning = True
 
-        data = self.getMeasurement()
+        data = self.get_measurement()
         self.add_measurement(data)
         self.scatter2d.plot(snv_transform(data))
         self.scatter3d.plot()
         self.histogram.plot()
-        # self.plotThreeD([data[1], data[4], data[6]])
 
-    def getMeasurement(self) -> list[float]:
+    def get_measurement(self) -> list[float]:
         if self.serial is not None:
             # send serial command
             self.serial.write(b"scan\n")
@@ -409,7 +415,7 @@ class PsPlot(QMainWindow):
                 data_normalized = [None] * len(data)
 
         self.currently_storing = True
-        self.addToDataframe(
+        self.store_to_dataframe(
             data,
             data_snv,
             data_normalized,
@@ -438,7 +444,7 @@ class PsPlot(QMainWindow):
 
         self.currently_storing = False
 
-    def addToDataframe(
+    def store_to_dataframe(
         self,
         data: list[float],
         data_snv: list[float],
@@ -464,6 +470,9 @@ class PsPlot(QMainWindow):
             *data_normalized,
         ]
 
+    def _update_df_after_table_change(self, column, row, value):
+        self.df.loc[row, column] = value
+
     def calibrate(self) -> None:
         button = QMessageBox.question(
             self, "Calibration", "Is the spectralon sample on the sensor?"
@@ -476,7 +485,7 @@ class PsPlot(QMainWindow):
                 self.regularMeasurementBtn.setEnabled(True)
                 self.regularMeasurementBtn.setToolTip("")
 
-            self.baseline = self.getMeasurement()
+            self.baseline = self.get_measurement()
             self.current_calibration_counter += 1
             self.total_calibration_counter += 1
             self.store_measurement(self.baseline, calibrated_measurement=True)
@@ -496,7 +505,7 @@ class PsPlot(QMainWindow):
             "loading dataset",
             f"Dataset is loaded from url:\n{settings.DATAFRAME.DATASET_URL}",
         )
-        self.loadDataset(settings.DATAFRAME.DATASET_URL)
+        self.load_dataset(settings.DATAFRAME.DATASET_URL)
 
     def load_dataset_local(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
@@ -508,7 +517,7 @@ class PsPlot(QMainWindow):
         if not filename:
             QMessageBox.information(self, "loading dataset", "No file was selected")
         else:
-            self.loadDataset(filename)
+            self.load_dataset(filename)
 
     def _load_dataset_warning(self) -> bool:
         """returns true if user is sure"""
@@ -532,7 +541,7 @@ class PsPlot(QMainWindow):
         )
         return button == QMessageBox.Yes
 
-    def loadDataset(self, dataset_path: str) -> None:
+    def load_dataset(self, dataset_path: str) -> None:
         """load a dataset to continue where that dataset last left off"""
         # give warnings that there is data and it will get overwritten
         if len(self.df) > 0:
@@ -613,7 +622,7 @@ class PsPlot(QMainWindow):
         self.scatter2d.plot()
         self.scatter3d.plot()
 
-    def exportCsv(self) -> None:
+    def export_to_csv(self) -> None:
         fname, _ = QFileDialog.getSaveFileName(
             self,
             "Save File",

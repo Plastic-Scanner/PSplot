@@ -1,4 +1,10 @@
 #!/usr/bin/env python
+"""implements visualisation components for the PSplot window
+- 2d scatter plot
+- 3d scatter plot
+- histogram
+- data table
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtDataVisualization import (
     Q3DCamera,
     Q3DScatter,
@@ -22,6 +29,7 @@ from PyQt5.QtGui import (
     QVector3D,
 )
 from PyQt5.QtWidgets import (
+    QApplication,
     QBoxLayout,
     QButtonGroup,
     QCheckBox,
@@ -31,6 +39,8 @@ from PyQt5.QtWidgets import (
     QLabel,
     QPushButton,
     QRadioButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -39,16 +49,10 @@ from PyQt5.QtWidgets import (
 import pyqtgraph as pg
 
 import settings
-from helper_functions import normalize
+from helper_functions import list_to_string, normalize
 
 if TYPE_CHECKING:
     from psplot import PsPlot
-
-
-class WriteCoordinateError(Exception):
-    """error for when user tries to manually set an inmutable variable"""
-
-    pass
 
 
 class PSplotVisual(ABCMeta, type(QBoxLayout)):
@@ -170,10 +174,6 @@ class ScatterPlot2D(QVBoxLayout, PlotLayout):
     def plotWidget(self) -> pg.PlotWidget:
         return self._plotWidget
 
-    @plotWidget.setter
-    def plotWidget(self, value) -> None:
-        raise WriteCoordinateError("plotWidget does not support item assignment")
-
     def clear(self) -> None:
         self._changing_plot = True
         self.plot_history.clear()
@@ -264,6 +264,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         #     }
         # }
         # TODO make this a dataclass or something smart
+        # could also use fancy custom typehint
         self.unique_series = {material: {} for material in settings.SCATTER3D.ALLOWED_MATERIALS}
 
     def _init_plot_widget(self) -> None:
@@ -671,3 +672,134 @@ class Histogram(QVBoxLayout, PlotLayout):
 
     def export(self) -> None:
         return NotImplemented
+
+
+class Table(QTableWidget):
+    """
+    this class extends QTableWidget
+    - supports copying multiple cell's text onto the clipboard
+    - formatted specifically to work with multiple-cell paste into programs
+      like google sheets, excel, or numbers
+    - autocomplete functionality for certain columns
+    Taken and modified from https://stackoverflow.com/a/68598423/5539470
+    """
+
+    # when the user manually makes a change to data in the table, this will emit a signal
+    # this signal is captured by the dataframe handler and updated in the dataframe
+    # arguments:
+    # str : name of the corresponding column of the dataframe
+    # int : index of the row
+    # str : the new value
+    user_change = pyqtSignal(str, int, str)
+
+    def __init__(
+        self,
+    ) -> None:
+        super().__init__()
+
+        self.setColumnCount(len(settings.TABLE.HEADERS))
+        self.setHorizontalHeaderLabels(settings.TABLE.HEADERS)
+
+        # make the first 2 columns extra wide
+        self.setColumnWidth(0, 200)
+        self.setColumnWidth(1, 200)
+
+        self.itemChanged.connect(self._user_modification)
+
+        # the labels for the most left column
+        self._row_labels = []
+        # how many times a calibrated measurement has been appended
+        self._calibration_counter = 0
+
+        # true when table is changing due to function call
+        self._currently_appending = False
+
+    def append(
+        self,
+        data: list[float],
+        name: str = "",
+        material: str = "unknown",
+        color: str = "",
+        calibrated_measurement: bool = False,
+    ) -> None:
+        """Add a new row to the table.
+        A row can take on one of two types: calibrated, or not calibrated.
+        A calibrated row is highlighted with a different background color
+        and given a different index in the left column.
+        """
+        self._currently_appending = True
+        n_rows = self.rowCount()
+        # add a row
+        self.setRowCount(n_rows + 1)
+
+        # add sample name as column 0
+        # self.setItem(n_rows, 0, QTableWidgetItem(name))
+        self.setItem(n_rows, 0, QTableWidgetItem(name))
+
+        # add sample material as column 1
+        self.setItem(n_rows, 1, QTableWidgetItem(material))
+
+        # add sample color as column 2
+        self.setItem(n_rows, 2, QTableWidgetItem(color))
+
+        if calibrated_measurement:
+            self._calibration_counter += 1
+            self._row_labels.append(f"c {self._calibration_counter}")
+            self.setItem(n_rows, 1, QTableWidgetItem("spectralon"))
+        else:
+            self._row_labels.append(str(n_rows + 1 - self._calibration_counter))
+
+        self.setVerticalHeaderLabels(self._row_labels)
+
+        # add value for every column of new row
+        data_str = list_to_string(data)
+        for col, val in enumerate(data_str, start=settings.TABLE.N_NAMED_HEADERS):
+            cell = QTableWidgetItem(val)
+            # disable editing of cells
+            cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            # use a different color if the measurement was taken for calibration
+            self.setItem(n_rows, col, cell)
+
+        # apply different background color for calibration measurement
+        if calibrated_measurement:
+            for column in range(self.columnCount()):
+                self.item(n_rows, column).setBackground(self.palette().alternateBase().color())
+
+        self.scrollToBottom()
+        self._currently_appending = False
+
+    def clear(self) -> None:
+        """Clears the contents of the table."""
+        self.clearContents()
+        self.setRowCount(0)
+        self._row_labels = []
+
+    def _user_modification(self, item: QTableWidgetItem) -> None:
+        """Called when cell of the table changed.
+        When this change is due to a user manually modifying a value, a signal is emitted.
+        """
+        if self._currently_appending is False:
+            self.user_change.emit(
+                settings.TABLE.HEAD_TO_DF[settings.TABLE.HEADERS[item.column()]],
+                item.row(),
+                item.text(),
+            )
+
+    def keyPressEvent(self, event) -> None:
+        """Enables copying from the table using CTRL-C."""
+        super().keyPressEvent(event)
+
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_C:
+                copied_cells = sorted(self.selectedIndexes())
+
+                copy_text = ""
+                max_column = copied_cells[-1].column()
+                for c in copied_cells:
+                    copy_text += self.item(c.row(), c.column()).text()
+                    if c.column() == max_column:
+                        copy_text += "\n"
+                    else:
+                        copy_text += "\t"
+
+                QApplication.clipboard().setText(copy_text)

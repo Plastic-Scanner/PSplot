@@ -75,8 +75,16 @@ class TABLE:
 
     # the names of the columns of the table
     HEADERS = ["name", "material", "color"] + [str(x) for x in HARDWARE.WAVELENGTHS]
+    # header to dataframe
+    HEAD_TO_DF = {
+        "name": "Name",
+        "material": "PlasticType",
+        "color": "Color",
+    }
     # the columns of the dataframe that are represented in the table
     DATAFRAME_SUBSET_HEADERS = [f"nm{x}" for x in HARDWARE.WAVELENGTHS]
+    # starting index of the columns that contain measurement data
+    N_NAMED_HEADERS = len(HEADERS) - len(DATAFRAME_SUBSET_HEADERS)
 
 
 class CLASSIFIER:
