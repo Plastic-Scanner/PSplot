@@ -742,8 +742,10 @@ class PsPlot(QMainWindow):
             if not (self._loadDatasetWarning() and self._loadDatasetWarningReally()):
                 return
 
-        new_df = pd.read_csv(dataset_path, index_col="Reading", dtype=self.DF_HEADER_DTYPES)
-        if list(new_df.columns) != self.DF_HEADER:
+        new_df = pd.read_csv(
+            dataset_path, index_col="Reading", dtype=settings.DATAFRAME.HEADER_DTYPES
+        )
+        if list(new_df.columns) != settings.DATAFRAME.HEADER:
             QMessageBox.critical(
                 self,
                 "Load dataset",
@@ -782,7 +784,7 @@ class PsPlot(QMainWindow):
         # reset calibration counter
         self.sample_names = set(self.df["Name"])
         self.sample_colors = set(self.df["Color"])
-        self.sample_materials = self.DEFAULT_SAMPLE_MATERIALS.copy()
+        self.sample_materials = settings.USER_INPUT.DEFAULT_SAMPLE_MATERIALS.copy()
         self.sample_materials.extend(list(set(self.df["PlasticType"]) - set(self.sample_materials)))
         self.current_calibration_counter = 0
         self.total_calibration_counter = 0
