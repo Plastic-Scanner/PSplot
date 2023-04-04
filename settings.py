@@ -17,13 +17,13 @@ class HARDWARE:
 
 class USER_INPUT:
     DEFAULT_SAMPLE_MATERIALS = [
-        "PP",
         "PET",
-        "PS",
         "HDPE",
-        "LDPE",
         "PVC",
-        "spectralon",
+        "LDPE",
+        "PP",
+        "PS",
+        "reference",
         "unknown",
     ]
 
@@ -121,12 +121,12 @@ class SCATTER3D:
         QColor(0, 0, 255),
     )
     ALLOWED_MATERIALS = [
-        "PP",
         "PET",
-        "PS",
         "HDPE",
-        "LDPE",
         "PVC",
+        "LDPE",
+        "PP",
+        "PS",
         "other",
         "unknown",
     ]
