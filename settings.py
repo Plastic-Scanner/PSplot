@@ -141,5 +141,5 @@ class SCATTER3D:
 class GUI:
     """settings used for the main window"""
 
-    # path to the icon
+    # path to the ic on
     WINDOW_LOGO = "./resources/ps_logo.png"
