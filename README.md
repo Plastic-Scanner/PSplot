@@ -18,7 +18,7 @@
 
 ## Installation
 
-Requires python >=3.8, pipenv
+Requires python 3.10, pipenv
 Install python dependencies (listed in Pipfile):
 ```
 $ pipenv install
