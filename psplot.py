@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+
 # pyqtgraph should always be imported after importing pyqt
 import pyqtgraph as pg
 
@@ -75,7 +76,7 @@ class PsPlot(QMainWindow):
         self.df = pd.DataFrame(columns=settings.DATAFRAME.HEADER)
 
         # classifier model used to predict type of plastic
-        self.clf = joblib.load("./resources/model.joblib")
+        self.clf = joblib.load(settings.CLASSIFIER.MODEL_TO_USE)
 
         # keeps track of all of the samples that have been measured
         self.sample_materials = settings.USER_INPUT.DEFAULT_SAMPLE_MATERIALS.copy()

@@ -91,7 +91,10 @@ class CLASSIFIER:
     """Settings for the classifier model"""
 
     # the columns of the dataframe that are used for the classifier model
-    PREDICTION_HEADERS = [f"nm{x}" for x in HARDWARE.WAVELENGTHS]
+    PREDICTION_HEADERS = [f"nm{x}_norm" for x in HARDWARE.WAVELENGTHS]
+    # path to the model
+    #  MODEL_TO_USE = "./resources/model.joblib"
+    MODEL_TO_USE = "./resources/model_PETHDPEPPPSOTHER.joblib"
 
 
 class SCATTER3D:
@@ -143,3 +146,6 @@ class GUI:
 
     # path to the icon
     WINDOW_LOGO = "./resources/ps_logo.png"
+
+
+

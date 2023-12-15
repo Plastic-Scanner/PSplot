@@ -612,9 +612,16 @@ class Histogram(QVBoxLayout, PlotLayout):
     def plot(self) -> None:
         if self._disableBtn.isChecked():
             return
-
         data = self._parent.df.loc[len(self._parent.df) - 1, settings.CLASSIFIER.PREDICTION_HEADERS]
         data = pd.DataFrame([data], columns=settings.CLASSIFIER.PREDICTION_HEADERS)
+        ##############
+        # Define a function to remove the last 4 characters from a column name
+        def remove_last_4_chars(column_name):
+            return column_name[:-5]
+
+        # Rename the columns by applying the function to each column name
+        data.columns = data.columns.map(remove_last_4_chars)        
+        ##################
         prediction = {
             plastic: self._parent.clf.predict_proba(data)[0][idx] * 100
             for idx, plastic in enumerate(self._parent.clf.classes_)
