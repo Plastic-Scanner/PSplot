@@ -393,14 +393,17 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
 
     def _ax_x_changed(self, name) -> None:
         self._axis_var_x = name
+        self._graph.axisX().setTitle(self._axis_var_x)
         self.plot(axis_changed=True)
 
     def _ax_y_changed(self, name) -> None:
         self._axis_var_y = name
+        self._graph.axisY().setTitle(self._axis_var_y)
         self.plot(axis_changed=True)
 
     def _ax_z_changed(self, name) -> None:
         self._axis_var_z = name
+        self._graph.axisZ().setTitle(self._axis_var_z)
         self.plot(axis_changed=True)
 
     def clear(self) -> None:
