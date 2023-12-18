@@ -415,9 +415,9 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         """
         print("WARNING: trying to plot point on normalized axis while non normalized data is present!")
         print("\tSWITCHING TO DISPLAYING NON NORMALIZED DATA...")
-        self._axis_var_x = self._axis_var_x.rstrip("_norm") + "_snv"
-        self._axis_var_y = self._axis_var_y.rstrip("_norm") + "_snv"
-        self._axis_var_z = self._axis_var_z.rstrip("_norm") + "_snv"
+        self._axis_var_x = self._axis_var_x.replace("_norm", "_snv")
+        self._axis_var_y = self._axis_var_y.replace("_norm", "_snv")
+        self._axis_var_z = self._axis_var_z.replace("_norm", "_snv")
         self._axXSelection.setCurrentText(self._axis_var_x)
         self._axYSelection.setCurrentText(self._axis_var_y)
         self._axZSelection.setCurrentText(self._axis_var_z)
