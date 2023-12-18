@@ -314,12 +314,8 @@ class PsPlot(QMainWindow):
             self.serialNotifLbl.setText("Using real data")
             time.sleep(1)
             self.serial.readline()  # Consume the "Plastic scanner initialized" line
-        except serial.serialutil.SerialException:
-            print(f"Cannot open serial port '{port}', using dummy data")
-            self.serial = None
-            self.serialNotifLbl.setText("Using dummy data")
-        except Exception:
-            print(f"Can't open serial port '{port}', using dummy data")
+        except Exception as e:
+            print(f"Cannot open serial port '{port}', using dummy data. Full error: {e}")
             self.serial = None
             self.serialNotifLbl.setText("Using dummy data")
 
