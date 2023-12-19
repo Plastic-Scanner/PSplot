@@ -605,8 +605,16 @@ class Histogram(QVBoxLayout, PlotLayout):
 
     def _disable(self) -> None:
         if self._disableBtn.isChecked():
+            self._sortDefaultBtn.setEnabled(False)
+            self._sortCertaintyBtn.setEnabled(False)
+            self._clearBtn.setEnabled(False)
+            self._exportBtn.setEnabled(False)
             self.clear()
         else:
+            self._sortDefaultBtn.setEnabled(True)
+            self._sortCertaintyBtn.setEnabled(True)
+            self._clearBtn.setEnabled(True)
+            self._exportBtn.setEnabled(True)
             self.plot()
 
     def plot(self) -> None:
