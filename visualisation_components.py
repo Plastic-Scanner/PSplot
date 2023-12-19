@@ -600,6 +600,8 @@ class Histogram(QVBoxLayout, PlotLayout):
         self._controlLayout.addLayout(_buttonLayout)
         self._controlLayout.setSpacing(0)
 
+        self._disableBtn.click()  # start with bar graph disabled
+
     def _sorting_selection_changed(self) -> None:
         self.plot()
 
