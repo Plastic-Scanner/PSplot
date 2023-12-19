@@ -318,6 +318,12 @@ class PsPlot(QMainWindow):
 
         port = self.serialComboBox.currentText()
 
+        if port == "None":
+            print("No device selected, using dummy data")
+            self.serial = None
+            self.serialNotifLbl.setText("Using dummy data")
+            return
+
         try:
             self.serial = serial.Serial(port, baudrate=settings.HARDWARE.BAUDRATE, timeout=1)
             print(f"Opened serial port {self.serial.portstr}")
