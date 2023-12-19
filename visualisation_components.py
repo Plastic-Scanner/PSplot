@@ -406,6 +406,24 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
         self._graph.axisZ().setTitle(self._axis_var_z)
         self.plot(axis_changed=True)
 
+    def _switch_axes_to_snv(self) -> None:
+        """
+        Switches normalized axes to SNV axes since it's assumed that
+        SNV column is always present in data. Normalized columns not
+        present when taking readings without first taking a calibration
+        measurement.
+        """
+        print("WARNING: trying to plot point on normalized axis while non normalized data is present!")
+        print("\tSWITCHING TO DISPLAYING NON NORMALIZED DATA...")
+        self._axis_var_x = self._axis_var_x.rstrip("_norm") + "_snv"
+        self._axis_var_y = self._axis_var_y.rstrip("_norm") + "_snv"
+        self._axis_var_z = self._axis_var_z.rstrip("_norm") + "_snv"
+        self._axXSelection.setCurrentText(self._axis_var_x)
+        self._axYSelection.setCurrentText(self._axis_var_y)
+        self._axZSelection.setCurrentText(self._axis_var_z)
+
+        self.plot(axis_changed=True)
+
     def clear(self) -> None:
         for material in self.unique_series:
             for id in self.unique_series[material]:
@@ -478,23 +496,7 @@ class ScatterPlot3D(QVBoxLayout, PlotLayout):
 
                             proxy.resetArray(dataArray)
                         else:
-                            for data in self.unique_series[material][id]["data"]:
-                                if (
-                                    data[index_x] is None
-                                    or data[index_y] is None
-                                    or data[index_z] is None
-                                ):
-                                    print(
-                                        "WARNING: trying to plot point on normalized axis while non normalized data is present!"
-                                    )
-                                    print("\tSWITCHING TO DISPLAYING NON NORMALIZED DATA...")
-                                    self._axis_var_x = self._axis_var_x.rstrip("_norm") + "_snv"
-                                    self._axis_var_y = self._axis_var_y.rstrip("_norm") + "_snv"
-                                    self._axis_var_z = self._axis_var_z.rstrip("_norm") + "_snv"
-                                    self._axXSelection.setCurrentText(self._axis_var_x)
-                                    self._axYSelection.setCurrentText(self._axis_var_y)
-                                    self._axZSelection.setCurrentText(self._axis_var_z)
-                            self.plot(axis_changed=True)
+                            self._switch_axes_to_snv()
                             return
 
                         if series not in self._graph.seriesList():
