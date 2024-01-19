@@ -583,7 +583,7 @@ class Histogram(QVBoxLayout, PlotLayout):
         self._sortBtnGroup.buttonClicked.connect(self._sorting_selection_changed)
 
         self._disableBtn = QCheckBox("disable")
-        self._disableBtn.clicked.connect(self._disable)
+        self._disableBtn.clicked.connect(self._toggle_chart_and_controls)
 
         self._clearBtn = QPushButton("Clear graph")
         self._clearBtn.clicked.connect(self.clear)
@@ -605,13 +605,23 @@ class Histogram(QVBoxLayout, PlotLayout):
         self._controlLayout.addLayout(_buttonLayout)
         self._controlLayout.setSpacing(0)
 
+        self._disableBtn.click()  # start with bar graph disabled
+
     def _sorting_selection_changed(self) -> None:
         self.plot()
 
-    def _disable(self) -> None:
+    def _toggle_chart_and_controls(self) -> None:
         if self._disableBtn.isChecked():
+            self._sortDefaultBtn.setEnabled(False)
+            self._sortCertaintyBtn.setEnabled(False)
+            self._clearBtn.setEnabled(False)
+            self._exportBtn.setEnabled(False)
             self.clear()
         else:
+            self._sortDefaultBtn.setEnabled(True)
+            self._sortCertaintyBtn.setEnabled(True)
+            self._clearBtn.setEnabled(True)
+            self._exportBtn.setEnabled(True)
             self.plot()
 
     def plot(self) -> None:
