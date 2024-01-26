@@ -50,8 +50,8 @@ class DATAFRAME:
             "DateTime",
         ]
         + [f"nm{x}" for x in HARDWARE.WAVELENGTHS]
-        + [f"nm{x}_snv" for x in HARDWARE.WAVELENGTHS]
         + [f"nm{x}_norm" for x in HARDWARE.WAVELENGTHS]
+        + [f"nm{x}_snv" for x in HARDWARE.WAVELENGTHS]
     )
     HEADER_DTYPES = (
         {
@@ -62,8 +62,8 @@ class DATAFRAME:
             "DateTime": str,
         }
         | {f"nm{x}": float for x in HARDWARE.WAVELENGTHS}
-        | {f"nm{x}_snv": float for x in HARDWARE.WAVELENGTHS}
         | {f"nm{x}_norm": float for x in HARDWARE.WAVELENGTHS}
+        | {f"nm{x}_snv": float for x in HARDWARE.WAVELENGTHS}
     )
 
 
