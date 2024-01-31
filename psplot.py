@@ -12,7 +12,7 @@ import pandas as pd
 
 import serial
 import serial.tools.list_ports
-from PyQt5.QtCore import QT_VERSION_STR, Qt
+from PyQt5.QtCore import Qt, pyqtSignal, QT_VERSION_STR
 from PyQt5.QtGui import (
     QIcon,
     QKeyEvent,
@@ -39,6 +39,16 @@ import settings
 from helper_functions import normalize, snv_transform
 from visualisation_components import Histogram, ScatterPlot2D, ScatterPlot3D, Table
 
+class ComboBox(QComboBox):
+    """Used because there's no existing onPopup signal in QComboBox.
+    Creating one is necessary in order to trigger a serial_scan() when the user
+    clicks the box to see the list of devices.
+    """
+    onPopup = pyqtSignal()
+
+    def showPopup(self) -> None:
+        self.onPopup.emit()
+        super(ComboBox, self).showPopup()
 
 class PsPlot(QMainWindow):
     """main class and main window of the PSPlot program:
@@ -142,9 +152,9 @@ class PsPlot(QMainWindow):
 
     def _setup_in_out_ui(self) -> None:
         # selecting serial
-        self.serialComboBox = QComboBox()
-        self.serialComboBox.activated.connect(self.serial_scan)
-        self.serialComboBox.currentTextChanged.connect(self.serial_connect)
+        self.serialComboBox = ComboBox()
+        self.serialComboBox.onPopup.connect(self.serial_scan)
+        self.serialComboBox.activated.connect(self.serial_connect)
         # make it take up the maximum possible space
         self.serialComboBox.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
@@ -308,18 +318,20 @@ class PsPlot(QMainWindow):
 
         port = self.serialComboBox.currentText()
 
+        if port == "None":
+            print("No device selected, using dummy data")
+            self.serial = None
+            self.serialNotifLbl.setText("Using dummy data")
+            return
+
         try:
             self.serial = serial.Serial(port, baudrate=settings.HARDWARE.BAUDRATE, timeout=1)
             print(f"Opened serial port {self.serial.portstr}")
             self.serialNotifLbl.setText("Using real data")
             time.sleep(1)
             self.serial.readline()  # Consume the "Plastic scanner initialized" line
-        except serial.serialutil.SerialException:
-            print(f"Cannot open serial port '{port}', using dummy data")
-            self.serial = None
-            self.serialNotifLbl.setText("Using dummy data")
-        except Exception:
-            print(f"Can't open serial port '{port}', using dummy data")
+        except Exception as e:
+            print(f"Cannot open serial port '{port}', using dummy data. Full error: {e}")
             self.serial = None
             self.serialNotifLbl.setText("Using dummy data")
 
